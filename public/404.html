@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script>
+      // GitHub Pages SPA redirect hack.
+      // Encodes the current path into a query string, then lets index.html
+      // decode it and hand it to React Router. Not needed on Vercel/Netlify.
+      const path = window.location.pathname.replace('/tala-catering-services', '');
+      window.location.replace(window.location.origin + '/tala-catering-services/?p=' + encodeURIComponent(path));
+    </script>
+  </head>
+</html>
