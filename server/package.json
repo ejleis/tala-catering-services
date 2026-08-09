@@ -1,0 +1,17 @@
+{
+  "name": "tala-event-catering-api",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "nodemailer": "^6.9.16"
+  }
+}
