@@ -10,34 +10,29 @@ export const SERVICES = [
   {
     id: 'weddings',
     title: 'Weddings',
-    description:
-      'Plated dinners, family-style spreads, and grazing stations built around your program and venue.',
+    description: 'Plated dinners, family-style spreads, and grazing stations built around your program and venue.',
   },
   {
     id: 'corporate',
     title: 'Corporate Events',
-    description:
-      'Working breakfasts, packed meals, and full executive dinners delivered on schedule.',
+    description: 'Working breakfasts, packed meals, and full executive dinners delivered on schedule.',
   },
   {
     id: 'debut',
     title: 'Debuts & Birthdays',
-    description:
-      'Crowd-pleasing menus and dessert tables sized for milestone celebrations.',
+    description: 'Crowd-pleasing menus and dessert tables sized for milestone celebrations.',
   },
   {
     id: 'private',
     title: 'Private Events',
-    description:
-      'Anniversaries, reunions, and intimate gatherings cooked for your table.',
+    description: 'Anniversaries, reunions, and intimate gatherings cooked for your table.',
   },
   {
     id: 'custom',
     title: 'Custom Packages',
-    description:
-      'Tell us your headcount, budget, and the feel of the day — we will build a menu around it.',
+    description: 'Tell us your headcount, budget, and the feel of the day — we will build a menu around it.',
   },
-]
+];
 
 export const MENU_CATEGORIES = {
   Appetizers: [
@@ -64,7 +59,7 @@ export const MENU_CATEGORIES = {
     { id: 'bev-coffee', name: 'Coffee & Tea Service', description: 'Brewed coffee, assorted teas' },
     { id: 'bev-mocktail', name: 'Signature Mocktails', description: 'Two rotating non-alcoholic options' },
   ],
-}
+};
 
 export const PACKAGES = [
   {
@@ -73,12 +68,7 @@ export const PACKAGES = [
     subtitle: 'Simple buffet service for smaller, casual gatherings.',
     pricePerGuest: 450,
     minimumGuests: 50,
-    inclusions: [
-      '3 main dishes, 1 dessert, 1 beverage',
-      'Buffet table setup and skirting',
-      'Disposable serviceware',
-      'Delivery within Bulacan',
-    ],
+    inclusions: ['3 main dishes, 1 dessert, 1 beverage', 'Buffet table setup and skirting', 'Disposable serviceware', 'Delivery within Bulacan'],
   },
   {
     id: 'handaan',
@@ -109,17 +99,9 @@ export const PACKAGES = [
       'On-the-day coordination',
     ],
   },
-]
+];
 
-export const EVENT_TYPES = [
-  'Wedding',
-  'Corporate Event',
-  'Debut',
-  'Birthday',
-  'Anniversary',
-  'Reunion',
-  'Other',
-]
+export const EVENT_TYPES = ['Wedding', 'Corporate Event', 'Debut', 'Birthday', 'Anniversary', 'Reunion', 'Other'];
 
 export const GALLERY = [
   {
@@ -130,24 +112,60 @@ export const GALLERY = [
   },
   {
     id: 'g2',
-    caption: 'Plated appetiser course',
-    src: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?q=80&w=800&auto=format&fit=crop',
+    caption: 'Crispy fried favorites, banana-leaf service',
+    src: 'https://images.unsplash.com/photo-1537495988501-f9cd94a78f3e?q=80&w=800&auto=format&fit=crop',
   },
   {
     id: 'g3',
-    caption: 'Corporate dinner service',
-    src: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?q=80&w=900&auto=format&fit=crop',
+    caption: 'Grilled inasal chicken',
+    src: 'https://images.unsplash.com/photo-1593870682262-8c9f6a9bb225?q=80&w=900&auto=format&fit=crop',
     span: 'col-span-2',
   },
   {
     id: 'g4',
-    caption: 'Dessert table',
-    src: 'https://images.unsplash.com/photo-1464347744102-11db6282f854?q=80&w=800&auto=format&fit=crop',
+    caption: 'Pancit noodles',
+    src: 'https://images.unsplash.com/photo-1530375930097-e957738bc0e6?q=80&w=800&auto=format&fit=crop',
   },
   {
     id: 'g5',
-    caption: 'Celebration setup',
-    src: 'https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?q=80&w=800&auto=format&fit=crop',
+    caption: 'Traditional Filipino plate',
+    src: 'https://images.unsplash.com/photo-1536489885071-87983c3e2859?q=80&w=800&auto=format&fit=crop',
     span: 'row-span-2',
   },
-]
+  {
+    id: 'g6',
+    caption: 'Crispy fried chicken',
+    src: 'https://images.unsplash.com/photo-1625477811215-17ea8062246f?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g7',
+    caption: 'Turon, fried banana',
+    src: 'https://images.unsplash.com/photo-1540714605746-4f474eefc6d4?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g8',
+    caption: 'Grilled meat and vegetables',
+    src: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=900&auto=format&fit=crop',
+    span: 'col-span-2',
+  },
+  {
+    id: 'g9',
+    caption: 'Home-style rice bowl',
+    src: 'https://images.unsplash.com/photo-1658713064117-51f51ecfaf69?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g10',
+    caption: 'Family-style serving',
+    src: 'https://images.unsplash.com/photo-1642616128754-7d026f979317?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g11',
+    caption: 'Sisig, sizzling plate',
+    src: 'https://images.unsplash.com/photo-1688084403060-3594a4b8ff8d?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g12',
+    caption: 'Fresh rice, shared meal',
+    src: 'https://images.unsplash.com/photo-1489710020360-66e504159b43?q=80&w=800&auto=format&fit=crop',
+  },
+];

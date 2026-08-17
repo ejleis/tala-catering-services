@@ -1,15 +1,15 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
-import { EVENT_TYPES, PACKAGES, MENU_CATEGORIES } from '../../data/catering.js'
-import { validateInquiry, LIMITS } from '../../lib/validation.js'
-import { submitInquiry } from '../../lib/api.js'
-import { useSubmitForm } from '../../hooks/useSubmitForm.js'
-import { todayISO } from '../../lib/format.js'
-import { Field, TextInput, TextArea, Select } from '../ui/Field.jsx'
-import Button from '../ui/Button.jsx'
-import Alert from '../ui/Alert.jsx'
-import { Section, SectionHeading } from '../ui/Section.jsx'
-import { BUSINESS } from '../../data/site.js'
-import { PhoneIcon, MailIcon, MapPinIcon, ClockIcon } from '../ui/Icons.jsx'
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { EVENT_TYPES, PACKAGES, MENU_CATEGORIES } from '../../data/catering.js';
+import { validateInquiry, LIMITS } from '../../lib/validation.js';
+import { submitInquiry } from '../../lib/api.js';
+import { useSubmitForm } from '../../hooks/useSubmitForm.js';
+import { todayISO } from '../../lib/format.js';
+import { Field, TextInput, TextArea, Select } from '../ui/Field.jsx';
+import Button from '../ui/Button.jsx';
+import Alert from '../ui/Alert.jsx';
+import { Section, SectionHeading } from '../ui/Section.jsx';
+import { BUSINESS } from '../../data/site.js';
+import { PhoneIcon, MailIcon, MapPinIcon, ClockIcon } from '../ui/Icons.jsx';
 
 const EMPTY = {
   name: '',
@@ -27,84 +27,77 @@ const EMPTY = {
   // input they find, so a non-empty value here is a strong spam signal. The
   // server rejects those submissions silently.
   website: '',
-}
+};
 
 const CONTACT_DETAILS = [
   [PhoneIcon, 'Phone', BUSINESS.phone, `tel:${BUSINESS.phone.replace(/\s/g, '')}`],
   [MailIcon, 'Email', BUSINESS.email, `mailto:${BUSINESS.email}`],
-  [MapPinIcon, 'Service area', BUSINESS.address, null],
-  [ClockIcon, 'Hours', BUSINESS.hours, null],
-]
+];
 
-const MENU_OPTIONS = Object.keys(MENU_CATEGORIES)
+const MENU_OPTIONS = Object.keys(MENU_CATEGORIES);
 
 const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
-  const [values, setValues] = useState(EMPTY)
-  const sectionRef = useRef(null)
-  const firstFieldRef = useRef(null)
+  const [values, setValues] = useState(EMPTY);
+  const sectionRef = useRef(null);
+  const firstFieldRef = useRef(null);
 
   const { status, errors, formError, handleSubmit, reset } = useSubmitForm({
     validate: validateInquiry,
     submit: submitInquiry,
-  })
+  });
 
-  // Lets the Packages section pre-select a package and focus this form.
   useImperativeHandle(ref, () => ({
     prefillPackage(pkg) {
       setValues((current) => ({
         ...current,
         packageId: pkg.id,
         guestCount: current.guestCount || String(pkg.minimumGuests ?? ''),
-      }))
-      sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      window.setTimeout(() => firstFieldRef.current?.focus(), 500)
+      }));
+      sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.setTimeout(() => firstFieldRef.current?.focus(), 500);
     },
-  }))
+  }));
 
   function update(field, value) {
-    setValues((current) => ({ ...current, [field]: value }))
+    setValues((current) => ({ ...current, [field]: value }));
   }
 
   function toggleMenuInterest(category) {
     setValues((current) => ({
       ...current,
-      menuInterest: current.menuInterest.includes(category)
-        ? current.menuInterest.filter((item) => item !== category)
-        : [...current.menuInterest, category],
-    }))
+      menuInterest: current.menuInterest.includes(category) ? current.menuInterest.filter((item) => item !== category) : [...current.menuInterest, category],
+    }));
   }
 
   function onSubmit(event) {
-    event.preventDefault()
-    handleSubmit(values)
+    event.preventDefault();
+    handleSubmit(values);
   }
 
   function startNewInquiry() {
-    setValues(EMPTY)
-    reset()
+    setValues(EMPTY);
+    reset();
   }
 
   if (status === 'success') {
     return (
       <Section id="inquire" tone="muted">
         <div className="mx-auto max-w-xl rounded-panel border border-ink-200 bg-white p-10 text-center">
-          <span className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-2xl">
-            ✓
-          </span>
+          <span className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-2xl">✓</span>
           <h2 className="mb-3 text-2xl">Thank you for your inquiry</h2>
           <p className="mb-8 text-ink-500">
-            Your request has been sent to our team. We will contact you shortly with availability,
-            menu options, and a detailed quote — usually within two business days.
+            Your request has been sent to our team. We will contact you shortly with availability, menu options, and a detailed quote — usually within two
+            business days.
           </p>
           <Button variant="outline" onClick={startNewInquiry}>
             Send another inquiry
           </Button>
         </div>
       </Section>
-    )
+    );
   }
 
-  const busy = status === 'submitting'
+  const busy = status === 'submitting';
 
   return (
     <Section id="inquire" tone="muted">
@@ -119,12 +112,8 @@ const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
 
       <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr]">
         <aside className="rounded-panel bg-plum-900 p-8 text-white">
-          <h3 className="mb-3 font-display text-2xl font-semibold text-white">
-            Prefer to talk it through?
-          </h3>
-          <p className="mb-8 text-white/75">
-            Reach us directly and we will walk you through packages, menus, and dates.
-          </p>
+          <h3 className="mb-3 font-display text-2xl font-semibold text-white">Prefer to talk it through?</h3>
+          <p className="mb-8 text-white/75">Reach us directly and we will walk you through packages, menus, and dates.</p>
 
           <ul className="flex flex-col gap-5">
             {CONTACT_DETAILS.map(([Icon, label, value, href]) => (
@@ -147,11 +136,7 @@ const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
           </ul>
         </aside>
 
-        <form
-          onSubmit={onSubmit}
-          noValidate
-          className="rounded-panel border border-ink-200 bg-white p-6 sm:p-8"
-        >
+        <form onSubmit={onSubmit} noValidate className="rounded-panel border border-ink-200 bg-white p-6 sm:p-8">
           {formError && (
             <Alert tone="error" className="mb-6">
               {formError}
@@ -256,12 +241,7 @@ const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
 
             <Field label="Package of interest" error={errors.packageId}>
               {(fieldProps) => (
-                <Select
-                  {...fieldProps}
-                  name="packageId"
-                  value={values.packageId}
-                  onChange={(event) => update('packageId', event.target.value)}
-                >
+                <Select {...fieldProps} name="packageId" value={values.packageId} onChange={(event) => update('packageId', event.target.value)}>
                   <option value="">Not sure yet / help me choose</option>
                   {PACKAGES.map((pkg) => (
                     <option key={pkg.id} value={pkg.id}>
@@ -292,35 +272,23 @@ const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
             </legend>
             <div className="flex flex-wrap gap-2">
               {MENU_OPTIONS.map((category) => {
-                const checked = values.menuInterest.includes(category)
+                const checked = values.menuInterest.includes(category);
                 return (
                   <label
                     key={category}
                     className={`cursor-pointer rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                      checked
-                        ? 'border-brand-500 bg-brand-500 text-white'
-                        : 'border-ink-200 bg-white text-ink-500 hover:border-brand-400'
+                      checked ? 'border-brand-500 bg-brand-500 text-white' : 'border-ink-200 bg-white text-ink-500 hover:border-brand-400'
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={checked}
-                      onChange={() => toggleMenuInterest(category)}
-                    />
+                    <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleMenuInterest(category)} />
                     {category}
                   </label>
-                )
+                );
               })}
             </div>
           </fieldset>
 
-          <Field
-            label="Message or special requests"
-            error={errors.message}
-            className="mt-5"
-            hint={`${values.message.length}/${LIMITS.message} characters`}
-          >
+          <Field label="Message or special requests" error={errors.message} className="mt-5" hint={`${values.message.length}/${LIMITS.message} characters`}>
             {(fieldProps) => (
               <TextArea
                 {...fieldProps}
@@ -353,13 +321,11 @@ const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
             {busy ? 'Sending inquiry…' : 'Send Inquiry'}
           </Button>
 
-          <p className="mt-3 text-center text-xs text-ink-500">
-            We use your details only to respond to this inquiry. No payment is collected on this form.
-          </p>
+          <p className="mt-3 text-center text-xs text-ink-500">We use your details only to respond to this inquiry. No payment is collected on this form.</p>
         </form>
       </div>
     </Section>
-  )
-})
+  );
+});
 
-export default InquiryForm
+export default InquiryForm;

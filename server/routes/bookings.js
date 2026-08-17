@@ -1,10 +1,10 @@
-const express = require('express')
-const crypto = require('node:crypto')
-const rateLimit = require('express-rate-limit')
-const { validateBooking } = require('../lib/validation')
-const { sendBookingToOwner } = require('../lib/mailer')
+const express = require('express');
+const crypto = require('node:crypto');
+const rateLimit = require('express-rate-limit');
+const { validateBooking } = require('../lib/validation');
+const { sendBookingToOwner } = require('../lib/mailer');
 
-const router = express.Router()
+const router = express.Router();
 
 const submitLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -12,7 +12,7 @@ const submitLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many booking requests. Please try again later.' },
-})
+});
 
 /**
  * Server-side catalogue.
@@ -27,58 +27,58 @@ const CATALOGUE = {
   'swiss-belhotel-blulane': {
     name: 'Swiss-Belhotel Blulane',
     rooms: {
-      'sbb-deluxe': { name: 'Deluxe Room', rate: 4500, maxGuests: 2 },
-      'sbb-premier': { name: 'Premier Room', rate: 5800, maxGuests: 2 },
-      'sbb-suite': { name: 'Executive Suite', rate: 8200, maxGuests: 3 },
+      'sbb-deluxe': { name: 'Deluxe Room', rate: 5000, maxGuests: 2 },
+      'sbb-premier': { name: 'Premier Room', rate: 5000, maxGuests: 2 },
+      'sbb-suite': { name: 'Executive Suite', rate: 5000, maxGuests: 3 },
     },
   },
   'bay-area-suites-manila': {
     name: 'Bay Area Suites Manila',
     rooms: {
-      'bas-studio': { name: 'Studio Suite', rate: 3900, maxGuests: 2 },
-      'bas-family': { name: 'Family Suite', rate: 6600, maxGuests: 4 },
-      'bas-penthouse': { name: 'Penthouse Suite', rate: 9800, maxGuests: 3 },
+      'bas-studio': { name: 'Studio Suite', rate: 5000, maxGuests: 2 },
+      'bas-family': { name: 'Family Suite', rate: 5000, maxGuests: 4 },
+      'bas-penthouse': { name: 'Penthouse Suite', rate: 5000, maxGuests: 3 },
     },
   },
   'red-hotel-cubao': {
     name: 'Red Hotel Cubao',
     rooms: {
-      'rhc-standard': { name: 'Standard Room', rate: 2400, maxGuests: 2 },
-      'rhc-deluxe': { name: 'Deluxe Room', rate: 3100, maxGuests: 2 },
-      'rhc-triple': { name: 'Triple Room', rate: 3900, maxGuests: 3 },
+      'rhc-standard': { name: 'Standard Room', rate: 5000, maxGuests: 2 },
+      'rhc-deluxe': { name: 'Deluxe Room', rate: 5000, maxGuests: 2 },
+      'rhc-triple': { name: 'Triple Room', rate: 5000, maxGuests: 3 },
     },
   },
-}
+};
 
-const TAX_RATE = 0.12
+const TAX_RATE = 0.12;
 
 function buildReference() {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   // crypto.randomInt is unpredictable; Math.random is not and must never be
   // used for anything a user could try to guess or enumerate.
-  const suffix = crypto.randomInt(0, 10_000).toString().padStart(4, '0')
-  return `HB-${date}-${suffix}`
+  const suffix = crypto.randomInt(0, 10_000).toString().padStart(4, '0');
+  return `HB-${date}-${suffix}`;
 }
 
 router.post('/', submitLimiter, async (req, res, next) => {
   try {
     if (typeof req.body?.website === 'string' && req.body.website.trim() !== '') {
-      return res.status(200).json({ ok: true })
+      return res.status(200).json({ ok: true });
     }
 
-    const { data, errors } = validateBooking(req.body)
+    const { data, errors } = validateBooking(req.body);
     if (Object.keys(errors).length > 0) {
-      return res.status(400).json({ message: 'Please correct the highlighted fields.', errors })
+      return res.status(400).json({ message: 'Please correct the highlighted fields.', errors });
     }
 
     // Verify the hotel and room actually exist, server-side.
-    const hotel = CATALOGUE[data.hotelSlug]
+    const hotel = CATALOGUE[data.hotelSlug];
     if (!hotel) {
-      return res.status(400).json({ message: 'Unknown hotel.', errors: { hotelSlug: 'Unknown hotel.' } })
+      return res.status(400).json({ message: 'Unknown hotel.', errors: { hotelSlug: 'Unknown hotel.' } });
     }
-    const room = hotel.rooms[data.roomId]
+    const room = hotel.rooms[data.roomId];
     if (!room) {
-      return res.status(400).json({ message: 'Unknown room.', errors: { roomId: 'Unknown room.' } })
+      return res.status(400).json({ message: 'Unknown room.', errors: { roomId: 'Unknown room.' } });
     }
 
     // Enforce occupancy server-side too — the UI filter is not a guarantee.
@@ -86,24 +86,22 @@ router.post('/', submitLimiter, async (req, res, next) => {
       return res.status(400).json({
         message: 'That room cannot accommodate this many guests.',
         errors: { roomId: 'Too many guests for this room type.' },
-      })
+      });
     }
 
-    const nights = Math.round(
-      (new Date(`${data.checkOut}T00:00:00Z`) - new Date(`${data.checkIn}T00:00:00Z`)) / 86_400_000,
-    )
+    const nights = Math.round((new Date(`${data.checkOut}T00:00:00Z`) - new Date(`${data.checkIn}T00:00:00Z`)) / 86_400_000);
 
     // Cap stay length — guards against absurd totals from date manipulation.
     if (nights < 1 || nights > 30) {
       return res.status(400).json({
         message: 'Stays must be between 1 and 30 nights.',
         errors: { checkOut: 'Please choose a stay of 1–30 nights.' },
-      })
+      });
     }
 
-    const subtotal = room.rate * nights * data.rooms
-    const total = subtotal + Math.round(subtotal * TAX_RATE)
-    const reference = buildReference()
+    const subtotal = room.rate * nights * data.rooms;
+    const total = subtotal + Math.round(subtotal * TAX_RATE);
+    const reference = buildReference();
 
     // TODO (when Maya is live):
     //   1. Persist the booking with status PENDING_PAYMENT and this reference.
@@ -122,13 +120,13 @@ router.post('/', submitLimiter, async (req, res, next) => {
         total: `PHP ${total.toLocaleString()}`,
       },
       reference,
-    )
+    );
 
-    return res.status(201).json({ ok: true, reference, status: 'PENDING_PAYMENT' })
+    return res.status(201).json({ ok: true, reference, status: 'PENDING_PAYMENT' });
   } catch (error) {
-    return next(error)
+    return next(error);
   }
-})
+});
 
 /**
  * Maya webhook — payment verification endpoint (stub).
@@ -139,22 +137,19 @@ router.post('/', submitLimiter, async (req, res, next) => {
  * sequence and the signature check will fail (or worse, be skipped).
  */
 router.post('/maya/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  const signature = req.get('Maya-Signature') // confirm the real header name in Maya's docs
-  const secret = process.env.MAYA_WEBHOOK_SECRET
+  const signature = req.get('Maya-Signature'); // confirm the real header name in Maya's docs
+  const secret = process.env.MAYA_WEBHOOK_SECRET;
 
-  if (!secret || !signature) return res.status(400).end()
+  if (!secret || !signature) return res.status(400).end();
 
-  const expected = crypto.createHmac('sha256', secret).update(req.body).digest('hex')
+  const expected = crypto.createHmac('sha256', secret).update(req.body).digest('hex');
 
   // timingSafeEqual prevents a timing side channel that could let an attacker
   // discover a valid signature byte by byte.
-  const signatureBuffer = Buffer.from(signature, 'utf8')
-  const expectedBuffer = Buffer.from(expected, 'utf8')
-  if (
-    signatureBuffer.length !== expectedBuffer.length ||
-    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
-  ) {
-    return res.status(401).end()
+  const signatureBuffer = Buffer.from(signature, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    return res.status(401).end();
   }
 
   // const event = JSON.parse(req.body.toString('utf8'))
@@ -164,7 +159,7 @@ router.post('/maya/webhook', express.raw({ type: 'application/json' }), (req, re
   // queue the confirmation emails (retryable — never fail the payment because
   // an email bounced).
 
-  return res.status(200).json({ received: true })
-})
+  return res.status(200).json({ received: true });
+});
 
-module.exports = router
+module.exports = router;

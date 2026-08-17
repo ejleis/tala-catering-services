@@ -9,15 +9,9 @@ export const BUSINESS = {
   name: "Tala's Event Catering Services",
   shortName: "Tala's",
   tagline: 'Chef-led catering for the moments that matter.',
-  phone: '+63 900 000 0000', // [NEEDS PROOF]
-  email: 'hello@talacatering.example', // [NEEDS PROOF]
-  address: 'Pulilan, Bulacan, Philippines', // [NEEDS PROOF]
-  hours: 'Mon–Sat, 9:00 AM – 6:00 PM', // [NEEDS PROOF]
-  socials: [
-    { label: 'Facebook', href: '#' }, // [NEEDS PROOF]
-    { label: 'Instagram', href: '#' }, // [NEEDS PROOF]
-  ],
-}
+  phone: '+63 947 205 6423',
+  email: 'talaseventcateringservices@gmail.com',
+};
 
 export const NAV_LINKS = [
   { label: 'Home', to: '/' },
@@ -26,4 +20,4 @@ export const NAV_LINKS = [
   { label: 'Packages', to: '/#packages' },
   { label: 'Hotels', to: '/hotels' },
   { label: 'Contact', to: '/#inquire' },
-]
+];
