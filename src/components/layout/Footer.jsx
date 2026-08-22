@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import { BUSINESS } from '../../data/site.js'
-import { TalaMark } from '../ui/Icons.jsx'
 import { Container } from '../ui/Section.jsx'
 
 const EXPLORE = [
@@ -24,7 +23,9 @@ export default function Footer() {
         <div className="mb-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <div className="mb-4 flex items-center gap-2 font-display text-lg font-bold text-white">
-              <TalaMark className="h-6 w-6 text-brand-400" />
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/95 p-1">
+                <img src="/logo-icon.png" alt="" className="h-full w-full" />
+              </span>
               {BUSINESS.shortName}
             </div>
             <p className="max-w-xs text-sm">{BUSINESS.tagline}</p>

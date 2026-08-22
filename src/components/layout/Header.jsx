@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { BUSINESS, NAV_LINKS } from '../../data/site.js'
-import { MenuIcon, CloseIcon, TalaMark } from '../ui/Icons.jsx'
+import { MenuIcon, CloseIcon } from '../ui/Icons.jsx'
 import Button from '../ui/Button.jsx'
 import { Container } from '../ui/Section.jsx'
 
@@ -27,7 +27,7 @@ export default function Header() {
       <Container>
         <nav className="flex items-center justify-between py-3.5" aria-label="Primary">
           <Link to="/" className="flex items-center gap-2 font-display text-lg font-bold">
-            <TalaMark className="h-7 w-7 text-brand-500" />
+            <img src="/logo-icon.png" alt="" className="h-11 w-11" />
             <span>{BUSINESS.name}</span>
           </Link>
 
