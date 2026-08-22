@@ -57,7 +57,7 @@ npm run dev            # http://localhost:5173
 # API (separate terminal)
 cd server
 npm install
-cp ../.env.example .env   # then fill in SMTP + OWNER_EMAIL
+cp ../.env.example .env   # then fill in RESEND_API_KEY + OWNER_EMAIL
 npm run dev            # http://localhost:3001
 ```
 
@@ -65,44 +65,52 @@ The frontend reads `VITE_API_BASE_URL` (defaults to same-origin if unset).
 
 ---
 
-## Setting up email (Gmail)
+## Setting up email (Resend)
 
-Inquiry and booking notifications send through Gmail's SMTP relay to
-`talaseventcateringservices@gmail.com`. Gmail **rejects a normal account
-password over SMTP** — you must generate a 16-character **App Password**
-instead. This only has to be done once.
+Inquiry and booking notifications send through **Resend**, a transactional
+email API, to `talaseventcateringservices@gmail.com`.
 
-1. Sign in to the `talaseventcateringservices@gmail.com` Google Account.
-2. Turn on **2-Step Verification** if it isn't already on — App Passwords
-   require it: [myaccount.google.com/security](https://myaccount.google.com/security).
-3. Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
-4. Enter a name (e.g. "Tala's website") and click **Create**.
-5. Google shows a 16-character password once. Copy it — you can't view it again later.
+**Why not Gmail SMTP directly:** most free hosting tiers — including
+Render's free plan, which this project targets — block outbound traffic on
+SMTP ports 25, 465, and 587 entirely, as an anti-spam measure. An SMTP-based
+mailer works perfectly locally and then times out silently once deployed.
+Resend sends over a normal HTTPS request instead, which is never blocked.
+
+**Important constraint:** Resend can only send emails *from* a domain you've
+verified you control — it cannot send from `@gmail.com`, since Google's DNS
+isn't yours to verify. `OWNER_EMAIL` (who *receives* the notification) can
+still be the Gmail address; only the sending address is restricted.
+
+### One-time setup
+
+1. Sign up at [resend.com](https://resend.com) (free tier: 3,000 emails/month, 100/day — comfortably enough for a small catering site).
+2. **Verify your domain**: Dashboard → **Domains** → **Add Domain** → enter `tala-ecs.com`. Resend shows you a few DNS records (SPF, DKIM, and a tracking CNAME).
+3. Add those records at **Hostinger** the same way you added the Vercel A/CNAME records earlier: **Domains → tala-ecs.com → DNS Zone Editor**. Paste in exactly what Resend shows you.
+4. Back in Resend, wait for the domain status to show **Verified** (usually a few minutes, occasionally longer — DNS propagation again).
+5. Go to **API Keys** → **Create API Key** → name it (e.g. "Tala's website") → copy the key. It's shown once.
 6. In `server/.env`, set:
    ```
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   SMTP_USER=talaseventcateringservices@gmail.com
-   SMTP_PASSWORD=<the 16-character app password, no spaces>
+   RESEND_API_KEY=<the key you just copied>
    OWNER_EMAIL=talaseventcateringservices@gmail.com
-   MAIL_FROM="Tala's Event Catering Services <talaseventcateringservices@gmail.com>"
+   MAIL_FROM="Tala's Event Catering Services <inquiries@tala-ecs.com>"
    ```
-7. Restart the server (`npm run dev` inside `server/`) and submit the inquiry
-   form locally to confirm an email actually arrives.
+7. Restart the server (`npm run dev` inside `server/`) and submit the inquiry form locally to confirm an email actually arrives.
 
-**If it stops working later**, the most common cause is the App Password
-being revoked (e.g. after a password change) — generate a new one and update
-`.env`.
+### Testing before domain verification finishes
 
-**Gmail's free sending limit is ~500 messages/day**, which is far more than a
-small catering site needs, but worth knowing if inquiry volume ever grows a
-lot — at that point a dedicated transactional provider (Postmark, Resend,
-SendGrid) would be the next step, and only the SMTP_* values need to change.
+If you want to test immediately without waiting on DNS, Resend provides a
+shared sandbox sender — set `MAIL_FROM="Tala's Event Catering Services <onboarding@resend.dev>"`
+temporarily. This can only deliver to the email address on your own Resend
+account, not to arbitrary customer addresses, so switch back to
+`inquiries@tala-ecs.com` once your domain shows Verified.
 
-**Where these variables actually need to live:** `.env` only works for
-your own machine. Whatever you deploy `server/` to (see "Still required
-before launch" below — it isn't deployed anywhere yet) needs these same six
-variables set in *that* platform's environment variable settings, not just
+**If it stops working later**, check the Resend dashboard's **Logs** tab
+first — it shows the exact delivery status and error per email, which is far
+more specific than anything the server can tell you.
+
+**Where these variables actually need to live:** `.env` only works for your
+own machine. Whatever you deploy `server/` to needs these same three
+variables set in *that* platform's environment variable dashboard, not just
 in a local file.
 
 ---

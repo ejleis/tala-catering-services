@@ -1,12 +1,15 @@
-const nodemailer = require('nodemailer')
+/**
+ * Sends via Resend's HTTP API rather than raw SMTP.
+ *
+ * WHY NOT SMTP: free tiers on Render (and most free hosts) block outbound
+ * SMTP ports 25/465/587 entirely as an anti-spam measure — nodemailer would
+ * time out silently in production even though it works fine locally. Resend
+ * sends over a normal HTTPS request, which is never blocked.
+ */
+const { Resend } = require('resend')
 const { deFormula } = require('./validation')
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT ?? 587),
-  secure: Number(process.env.SMTP_PORT) === 465,
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
-})
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 /**
  * Escapes HTML so user-supplied content can never inject markup or script into
@@ -55,19 +58,23 @@ async function sendInquiryToOwner(data) {
     </table>
   `
 
-  return transporter.sendMail({
+  const { error } = await resend.emails.send({
     from: process.env.MAIL_FROM,
     to: process.env.OWNER_EMAIL,
     // replyTo lets the owner hit Reply and reach the customer, while the
-    // From header stays on our own verified domain (protects SPF/DKIM).
+    // From header stays on our own verified domain (protects deliverability).
     replyTo: `${safeHeader(data.name)} <${safeHeader(data.email)}>`,
-    subject: `New catering inquiry — ${safeHeader(data.eventType)} on ${safeHeader(data.eventDate)}`,
+    subject: `New Catering Inquiry – ${safeHeader(data.name)}`,
     html,
   })
+
+  // Resend resolves with { data, error } instead of rejecting on API-level
+  // failures — an unchecked error here would silently drop the inquiry.
+  if (error) throw new Error(`Resend: failed to send owner notification (${error.message ?? error.name})`)
 }
 
 async function sendInquiryAcknowledgement(data) {
-  return transporter.sendMail({
+  const { error } = await resend.emails.send({
     from: process.env.MAIL_FROM,
     to: safeHeader(data.email),
     subject: "We received your inquiry — Tala's Event Catering Services",
@@ -80,6 +87,8 @@ async function sendInquiryAcknowledgement(data) {
       <p>— Tala's Event Catering Services</p>
     `,
   })
+
+  if (error) throw new Error(`Resend: failed to send acknowledgement (${error.message ?? error.name})`)
 }
 
 async function sendBookingToOwner(data, reference) {
@@ -103,13 +112,15 @@ async function sendBookingToOwner(data, reference) {
     </table>
   `
 
-  return transporter.sendMail({
+  const { error } = await resend.emails.send({
     from: process.env.MAIL_FROM,
     to: process.env.OWNER_EMAIL,
     replyTo: `${safeHeader(data.name)} <${safeHeader(data.email)}>`,
     subject: `Booking request ${safeHeader(reference)} — ${safeHeader(data.hotelName)}`,
     html,
   })
+
+  if (error) throw new Error(`Resend: failed to send booking notification (${error.message ?? error.name})`)
 }
 
 module.exports = {
