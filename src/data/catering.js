@@ -108,7 +108,6 @@ export const GALLERY = [
     id: 'g1',
     caption: 'Wedding reception setup',
     src: 'https://images.unsplash.com/photo-1519225421980-715cb0215aed?q=80&w=800&auto=format&fit=crop',
-    span: 'row-span-2',
   },
   {
     id: 'g2',
@@ -118,8 +117,7 @@ export const GALLERY = [
   {
     id: 'g3',
     caption: 'Grilled inasal chicken',
-    src: 'https://images.unsplash.com/photo-1593870682262-8c9f6a9bb225?q=80&w=900&auto=format&fit=crop',
-    span: 'col-span-2',
+    src: 'https://images.unsplash.com/photo-1593870682262-8c9f6a9bb225?q=80&w=800&auto=format&fit=crop',
   },
   {
     id: 'g4',
@@ -130,7 +128,6 @@ export const GALLERY = [
     id: 'g5',
     caption: 'Traditional Filipino plate',
     src: 'https://images.unsplash.com/photo-1536489885071-87983c3e2859?q=80&w=800&auto=format&fit=crop',
-    span: 'row-span-2',
   },
   {
     id: 'g6',
@@ -145,8 +142,7 @@ export const GALLERY = [
   {
     id: 'g8',
     caption: 'Grilled meat and vegetables',
-    src: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=900&auto=format&fit=crop',
-    span: 'col-span-2',
+    src: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=800&auto=format&fit=crop',
   },
   {
     id: 'g9',
@@ -167,5 +163,45 @@ export const GALLERY = [
     id: 'g12',
     caption: 'Fresh rice, shared meal',
     src: 'https://images.unsplash.com/photo-1489710020360-66e504159b43?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g13',
+    caption: 'Adobo with steamed rice',
+    src: 'https://images.unsplash.com/photo-1642509600566-96fe95a744b3?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g14',
+    caption: 'Shared, family-style spread',
+    src: 'https://images.unsplash.com/photo-1638436684761-7e59f8a9072f?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g15',
+    caption: 'Banana leaf serving',
+    src: 'https://images.unsplash.com/photo-1569058242253-92a9c755a0ec?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g16',
+    caption: 'Fresh seafood plate',
+    src: 'https://images.unsplash.com/photo-1578366687181-5f90a617ca7a?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g17',
+    caption: 'Sinigang, sour tamarind soup',
+    src: 'https://images.unsplash.com/photo-1534596382981-1974b10d4e1a?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g18',
+    caption: 'Home-style ulam',
+    src: 'https://images.unsplash.com/photo-1583913459026-781129ce061f?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g19',
+    caption: 'Full Filipino spread',
+    src: 'https://images.unsplash.com/photo-1704865192176-d15656117a76?q=80&w=800&auto=format&fit=crop',
+  },
+  {
+    id: 'g20',
+    caption: 'Finishing touches before serving',
+    src: 'https://images.unsplash.com/photo-1635452066401-d05259e5cbbc?q=80&w=800&auto=format&fit=crop',
   },
 ];
