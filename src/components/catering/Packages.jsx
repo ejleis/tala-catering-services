@@ -55,8 +55,7 @@ export default function Packages({ onSelectPackage }) {
       </ul>
 
       <Alert tone="info" className="mx-auto mt-8 max-w-2xl">
-        Rates shown are indicative starting points for planning and exclude venue fees, travel outside our standard service area, and rentals. Final pricing is
-        confirmed in your written quote.
+        Final pricing is confirmed in your written quote.
       </Alert>
     </Section>
   );
