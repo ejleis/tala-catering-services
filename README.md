@@ -47,6 +47,27 @@ content without touching JSX; `ui/` holds primitives with no business logic;
 
 ---
 
+## Keeping room data in sync
+
+`src/data/hotels.js` (what the site displays) and `server/routes/bookings.js`'s
+`CATALOGUE` (what the server will actually accept and price a booking for)
+must list the exact same room IDs per hotel — the server intentionally never
+trusts a price sent from the browser, so it looks the room up in its own
+catalogue instead. These two files have drifted out of sync before, which
+either broke bookings for a room the server didn't recognize, or left the
+server accepting bookings for rooms invisible on the site.
+
+Run this after editing rooms in either file:
+
+```bash
+npm run check:rooms
+```
+
+It exits non-zero and prints exactly which hotel and room IDs are mismatched
+if anything is out of sync — safe to run before every push.
+
+---
+
 ## Running locally
 
 ```bash

@@ -27,25 +27,22 @@ const CATALOGUE = {
   'swiss-belhotel-blulane': {
     name: 'Swiss-Belhotel Blulane',
     rooms: {
-      'sbb-deluxe': { name: 'Deluxe Room', rate: 5000, maxGuests: 2 },
-      'sbb-premier': { name: 'Premier Room', rate: 5000, maxGuests: 2 },
       'sbb-suite': { name: 'Executive Suite', rate: 5000, maxGuests: 3 },
+      'sbb-premiere': { name: 'Premiere Room', rate: 4000, maxGuests: 2 },
     },
   },
   'bay-area-suites-manila': {
     name: 'Bay Area Suites Manila',
     rooms: {
-      'bas-studio': { name: 'Studio Suite', rate: 5000, maxGuests: 2 },
-      'bas-family': { name: 'Family Suite', rate: 5000, maxGuests: 4 },
-      'bas-penthouse': { name: 'Penthouse Suite', rate: 5000, maxGuests: 3 },
+      'basm-suite': { name: 'Executive Suite', rate: 5000, maxGuests: 3 },
+      'basm-premiere': { name: 'Premiere Room', rate: 4000, maxGuests: 2 },
     },
   },
   'red-hotel-cubao': {
     name: 'Red Hotel Cubao',
     rooms: {
-      'rhc-standard': { name: 'Standard Room', rate: 5000, maxGuests: 2 },
-      'rhc-deluxe': { name: 'Deluxe Room', rate: 5000, maxGuests: 2 },
-      'rhc-triple': { name: 'Triple Room', rate: 5000, maxGuests: 3 },
+      'rhc-suite': { name: 'Executive Suite', rate: 5000, maxGuests: 3 },
+      'rhc-premiere': { name: 'Premiere Room', rate: 4000, maxGuests: 2 },
     },
   },
 };
