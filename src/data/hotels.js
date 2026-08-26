@@ -1,13 +1,17 @@
 /**
  * Partner hotel data.
  *
+ * PHOTOS: real, commissioned photography of each property — licensed for
+ * this use by the client, who arranged the photographer directly with each
+ * hotel. Stored under public/hotels/{slug}/.
+ *
  * IMPORTANT — [NEEDS PROOF]
- * The three hotel names are real partner properties. Everything else below
- * (room types, nightly rates, availability counts, ratings, amenities, and
- * photos) is DEMO PLACEHOLDER CONTENT and must be replaced with details
+ * Room types, nightly rates, availability counts, ratings, and review counts
+ * below are still DEMO PLACEHOLDER CONTENT and must be replaced with details
  * confirmed in writing by each property before this goes live. Publishing
  * invented rates or availability for a real hotel is both a commercial and a
- * legal risk for your client.
+ * legal risk for your client — this caveat applies to the data, not the
+ * photos, which are already rights-cleared.
  */
 export const HOTELS = [
   {
@@ -21,10 +25,10 @@ export const HOTELS = [
     summary: 'A contemporary city hotel with easy access to Binondo, Divisoria, and the historic core of Manila.',
     description:
       'Swiss-Belhotel Blulane pairs modern rooms with an easy location for guests who want to be close to the older heart of Manila. Rooms are built for both short business stays and weekend trips, with a restaurant on site and a 24-hour front desk.',
-    image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1200&auto=format&fit=crop',
+    image: '/hotels/swiss-belhotel-blulane/hero.jpg',
     gallery: [
-      'https://images.unsplash.com/photo-1611892440504-42a792e24d32?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1582719508461-905c673771fd?q=80&w=800&auto=format&fit=crop',
+      '/hotels/swiss-belhotel-blulane/lobby.jpg',
+      '/hotels/swiss-belhotel-blulane/function-room.webp',
     ],
     perks: ['Free high-speed Wi-Fi', 'On-site restaurant', '24-hour front desk', 'Fitness centre', 'Airport transfer available', 'Daily housekeeping'],
     rooms: [
@@ -35,7 +39,7 @@ export const HOTELS = [
         bed: '1 King',
         maxGuests: 3,
         ratePerNight: 5000,
-        image: 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?q=80&w=800&auto=format&fit=crop',
+        image: '/hotels/swiss-belhotel-blulane/executive-suite-1.jpg',
         amenities: ['Separate living area', 'Bathtub', 'Lounge access'],
       },
       {
@@ -45,7 +49,7 @@ export const HOTELS = [
         bed: '1 Queen',
         maxGuests: 2,
         ratePerNight: 4000,
-        image: 'https://images.unsplash.com/photo-1591088398332-8a7791972843?q=80&w=800&auto=format&fit=crop',
+        image: '/hotels/swiss-belhotel-blulane/premiere-room-1.webp',
         amenities: ['Free Wi-Fi', 'Air conditioning', 'Work desk'],
       },
     ],
@@ -61,10 +65,10 @@ export const HOTELS = [
     summary: 'Spacious suite-style rooms near Manila Bay, geared toward families and longer stays.',
     description:
       'Bay Area Suites Manila offers apartment-style accommodation close to the bay, the airport, and the entertainment district. Most rooms include a kitchenette, which makes it a practical base for families or guests staying more than a few nights.',
-    image: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=1200&auto=format&fit=crop',
+    image: '/hotels/bay-area-suites-manila/hero.jpg',
     gallery: [
-      'https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1560185127-6ed189bf02f4?q=80&w=800&auto=format&fit=crop',
+      '/hotels/bay-area-suites-manila/lobby.jpg',
+      '/hotels/bay-area-suites-manila/swimming-pool.jpg',
     ],
     perks: ['Free high-speed Wi-Fi', 'In-room kitchenette', 'Laundry service', 'On-site parking', '24-hour front desk', 'Family-friendly rooms'],
     rooms: [
@@ -75,7 +79,7 @@ export const HOTELS = [
         bed: '1 King',
         maxGuests: 3,
         ratePerNight: 5000,
-        image: 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?q=80&w=800&auto=format&fit=crop',
+        image: '/hotels/bay-area-suites-manila/executive-suite-1.jpg',
         amenities: ['Separate living area', 'Bathtub', 'Lounge access'],
       },
       {
@@ -85,7 +89,7 @@ export const HOTELS = [
         bed: '1 Queen',
         maxGuests: 2,
         ratePerNight: 4000,
-        image: 'https://images.unsplash.com/photo-1591088398332-8a7791972843?q=80&w=800&auto=format&fit=crop',
+        image: '/hotels/bay-area-suites-manila/premiere-room-1.jpg',
         amenities: ['Free Wi-Fi', 'Air conditioning', 'Work desk'],
       },
     ],
@@ -101,10 +105,10 @@ export const HOTELS = [
     summary: 'A practical, well-located hotel beside Cubao’s transport hubs and shopping districts.',
     description:
       'Red Hotel Cubao is a straightforward, comfortable choice for guests who mainly need a clean, secure base close to Araneta City, the MRT and LRT lines, and the bus terminals serving northern and southern Luzon.',
-    image: 'https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?q=80&w=1200&auto=format&fit=crop',
+    image: '/hotels/red-hotel-cubao/hero.webp',
     gallery: [
-      'https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=800&auto=format&fit=crop',
+      '/hotels/red-hotel-cubao/lobby.webp',
+      '/hotels/red-hotel-cubao/restobar.webp',
     ],
     perks: ['Free high-speed Wi-Fi', '24-hour front desk', 'On-site café', 'CCTV security', 'Walking distance to MRT/LRT', 'Luggage storage'],
     rooms: [
@@ -115,7 +119,7 @@ export const HOTELS = [
         bed: '1 King',
         maxGuests: 3,
         ratePerNight: 5000,
-        image: 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?q=80&w=800&auto=format&fit=crop',
+        image: '/hotels/red-hotel-cubao/executive-suite.jpg',
         amenities: ['Separate living area', 'Bathtub', 'Lounge access'],
       },
       {
@@ -125,7 +129,7 @@ export const HOTELS = [
         bed: '1 Queen',
         maxGuests: 2,
         ratePerNight: 4000,
-        image: 'https://images.unsplash.com/photo-1591088398332-8a7791972843?q=80&w=800&auto=format&fit=crop',
+        image: '/hotels/red-hotel-cubao/premiere-room.jpg',
         amenities: ['Free Wi-Fi', 'Air conditioning', 'Work desk'],
       },
     ],
