@@ -3,7 +3,7 @@ import { EVENT_TYPES, PACKAGES, MENU_CATEGORIES } from '../../data/catering.js';
 import { validateInquiry, LIMITS } from '../../lib/validation.js';
 import { submitInquiry } from '../../lib/api.js';
 import { useSubmitForm } from '../../hooks/useSubmitForm.js';
-import { todayISO } from '../../lib/format.js';
+import { todayISO, formatPeso } from '../../lib/format.js';
 import { Field, TextInput, TextArea, Select } from '../ui/Field.jsx';
 import Button from '../ui/Button.jsx';
 import Alert from '../ui/Alert.jsx';
@@ -47,11 +47,20 @@ const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
   });
 
   useImperativeHandle(ref, () => ({
-    prefillPackage(pkg) {
+    /**
+     * @param pkg the selected package
+     * @param estimate optional { guests, days, total } from PackageCard's
+     *   inline calculator — only present if the customer actually used it.
+     */
+    prefillPackage(pkg, estimate) {
       setValues((current) => ({
         ...current,
         packageId: pkg.id,
-        guestCount: current.guestCount || String(pkg.minimumGuests ?? ''),
+        guestCount: estimate ? String(estimate.guests) : current.guestCount || String(pkg.minimumGuests ?? ''),
+        message:
+          estimate && !current.message
+            ? `Estimate from the ${pkg.name} calculator: ${estimate.days} day${estimate.days === 1 ? '' : 's'}, ~${formatPeso(estimate.total)} total.`
+            : current.message,
       }));
       sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       window.setTimeout(() => firstFieldRef.current?.focus(), 500);

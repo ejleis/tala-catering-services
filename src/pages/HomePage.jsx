@@ -17,7 +17,7 @@ export default function HomePage() {
       <About />
       <Services />
       <MenuShowcase />
-      <Packages onSelectPackage={(pkg) => inquiryRef.current?.prefillPackage(pkg)} />
+      <Packages onSelectPackage={(pkg, estimate) => inquiryRef.current?.prefillPackage(pkg, estimate)} />
       <Gallery />
       <HotelsTeaser />
       <InquiryForm ref={inquiryRef} />

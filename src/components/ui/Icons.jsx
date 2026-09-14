@@ -200,3 +200,22 @@ export const SlidersIcon = (p) => (
     <circle cx="16" cy="18" r="2" stroke="currentColor" strokeWidth="1.6" />
   </Svg>
 );
+
+export const ChevronDownIcon = (p) => (
+  <Svg {...p}>
+    <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const CalculatorIcon = (p) => (
+  <Svg {...p}>
+    <rect x="5" y="3" width="14" height="18" rx="2" stroke="currentColor" strokeWidth="1.6" />
+    <path d="M8 7h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <circle cx="8.5" cy="12" r="0.9" fill="currentColor" />
+    <circle cx="12" cy="12" r="0.9" fill="currentColor" />
+    <circle cx="15.5" cy="12" r="0.9" fill="currentColor" />
+    <circle cx="8.5" cy="15.5" r="0.9" fill="currentColor" />
+    <circle cx="12" cy="15.5" r="0.9" fill="currentColor" />
+    <circle cx="15.5" cy="15.5" r="0.9" fill="currentColor" />
+  </Svg>
+);

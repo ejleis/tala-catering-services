@@ -82,7 +82,7 @@ export const PACKAGES = [
     id: 'kasalo',
     name: 'Kasalo',
     subtitle: 'Simple buffet service for smaller, casual gatherings.',
-    pricePerGuest: 450,
+    pricePerGuest: 1100,
     minimumGuests: 50,
     inclusions: ['3 main dishes, 1 dessert, 1 beverage', 'Buffet table setup and skirting', 'Disposable serviceware', 'Delivery within Bulacan'],
   },
@@ -90,7 +90,7 @@ export const PACKAGES = [
     id: 'handaan',
     name: 'Handaan',
     subtitle: 'Full-service catering with on-site staff — our most requested tier.',
-    pricePerGuest: 750,
+    pricePerGuest: 1400,
     minimumGuests: 50,
     featured: true,
     inclusions: [
