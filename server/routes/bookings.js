@@ -27,22 +27,19 @@ const CATALOGUE = {
   'swiss-belhotel-blulane': {
     name: 'Swiss-Belhotel Blulane',
     rooms: {
-      'sbb-suite': { name: 'Executive Suite', rate: 5000, maxGuests: 3 },
-      'sbb-premiere': { name: 'Premiere Room', rate: 4000, maxGuests: 2 },
+      'sbb-suite': { name: 'Executive One-Bedroom Suite', rate: 8000, maxGuests: 3 },
     },
   },
   'bay-area-suites-manila': {
     name: 'Bay Area Suites Manila',
     rooms: {
-      'basm-suite': { name: 'Executive Suite', rate: 5000, maxGuests: 3 },
-      'basm-premiere': { name: 'Premiere Room', rate: 4000, maxGuests: 2 },
+      'basm-suite': { name: 'Superior One Bedroom Suite', rate: 5238, maxGuests: 3 },
     },
   },
   'red-hotel-cubao': {
     name: 'Red Hotel Cubao',
     rooms: {
-      'rhc-suite': { name: 'Executive Suite', rate: 5000, maxGuests: 3 },
-      'rhc-premiere': { name: 'Premiere Room', rate: 4000, maxGuests: 2 },
+      'rhc-suite': { name: 'Executive Suite', rate: 6533, maxGuests: 3 },
     },
   },
 };
