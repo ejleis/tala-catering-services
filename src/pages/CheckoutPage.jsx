@@ -103,6 +103,34 @@ export default function CheckoutPage() {
     )
   }
 
+  // Rendered twice (inside the form on desktop, below the summary on mobile);
+  // only one copy is ever visible. The button submits the form by id.
+  const payBlock = (
+    <>
+      {formError && (
+        <Alert tone="error" className="mt-6">
+          {formError}
+        </Alert>
+      )}
+
+      <Alert tone="info" className="mt-6">
+        <strong>You will pay on Maya&apos;s secure page.</strong> Your order is confirmed only after
+        your payment is received, and we never see or store your card details.
+      </Alert>
+
+      <Button type="submit" form="checkout-form" size="lg" loading={busy} className="mt-6 w-full">
+        <LockIcon size={16} />
+        {busy ? 'Preparing payment…' : `Pay with Maya · ${formatPeso(total)}`}
+      </Button>
+
+      {/* [NEEDS PROOF] Placeholder wording — the client must approve their real cancellation and refund policy before launch. */}
+      <p className="mt-3 text-center text-xs text-ink-500">
+        For changes or cancellations after payment, please contact us directly. Any refund is
+        handled by Tala&apos;s Event Catering Services in line with their policy.
+      </p>
+    </>
+  )
+
   return (
     <Container className="py-12 md:py-16">
       <Link to="/#packages" className="text-sm font-semibold text-brand-700 hover:underline">
@@ -111,7 +139,7 @@ export default function CheckoutPage() {
       <h1 className="mb-8 mt-4 font-display text-3xl font-semibold">Checkout</h1>
 
       <div className="grid items-start gap-10 lg:grid-cols-[1.4fr_1fr]">
-        <form onSubmit={handleSubmit} noValidate className="rounded-panel border border-ink-200 bg-white p-6 md:p-8">
+        <form id="checkout-form" onSubmit={handleSubmit} noValidate className="rounded-panel border border-ink-200 bg-white p-6 md:p-8">
           <h2 className="mb-5 font-display text-xl font-semibold">Your details</h2>
 
           <div className="grid gap-5 sm:grid-cols-2">
@@ -154,27 +182,8 @@ export default function CheckoutPage() {
               value={values.website} onChange={handleChange} />
           </div>
 
-          {formError && (
-            <Alert tone="error" className="mt-6">
-              {formError}
-            </Alert>
-          )}
-
-          <Alert tone="info" className="mt-6">
-            <strong>You will pay on Maya&apos;s secure page.</strong> Your order is confirmed only after
-            your payment is received, and we never see or store your card details.
-          </Alert>
-
-          <Button type="submit" size="lg" loading={busy} className="mt-6 w-full">
-            <LockIcon size={16} />
-            {busy ? 'Preparing payment…' : `Pay with Maya · ${formatPeso(total)}`}
-          </Button>
-
-          {/* [NEEDS PROOF] Placeholder wording — the client must approve their real cancellation and refund policy before launch. */}
-          <p className="mt-3 text-center text-xs text-ink-500">
-            For changes or cancellations after payment, please contact us directly. Any refund is
-            handled by Tala&apos;s Event Catering Services in line with their policy.
-          </p>
+          {/* Desktop: payment block stays at the bottom of the form card. */}
+          <div className="hidden lg:block">{payBlock}</div>
         </form>
 
         <aside className="rounded-panel border border-ink-200 bg-ink-50 p-6 md:p-8" aria-label="Order summary">
@@ -201,6 +210,9 @@ export default function CheckoutPage() {
             <p className="font-display text-3xl font-semibold text-brand-700">{formatPeso(total)}</p>
           </div>
         </aside>
+
+        {/* Mobile: the order summary comes first, then the payment block below it. */}
+        <div className="lg:hidden">{payBlock}</div>
       </div>
     </Container>
   )
