@@ -94,11 +94,6 @@ export default function HotelDetailPage() {
       </section>
 
       <Container className="pb-20">
-        <Alert tone="info" className="mb-10">
-          Rates and availability for {hotel.name} are demonstration data pending written confirmation
-          from the property.
-        </Alert>
-
         <div className="grid gap-10 lg:grid-cols-[1.6fr_1fr]">
           {/* ---------- Main column ---------- */}
           <div>

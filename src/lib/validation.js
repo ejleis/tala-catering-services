@@ -13,6 +13,7 @@ export const LIMITS = {
   phone: 20,
   message: 2000,
   requests: 1000,
+  venue: 200,
   guests: { min: 1, max: 2000 },
   rooms: { min: 1, max: 10 },
 }
@@ -102,6 +103,29 @@ export function validateBooking(values) {
     errors.checkOut = 'Check-out must be after check-in.'
 
   if (!values.roomId) errors.roomId = 'Please select a room.'
+
+  return errors
+}
+
+/** Validates the catering checkout details form. Returns a field -> message map. */
+export function validateCheckout(values) {
+  const errors = {}
+
+  if (!isNonEmpty(values.name)) errors.name = 'Please enter your full name.'
+  else if (values.name.length > LIMITS.name) errors.name = 'Name is too long.'
+
+  if (!isNonEmpty(values.email)) errors.email = 'Please enter your email address.'
+  else if (!isValidEmail(values.email)) errors.email = 'Please enter a valid email address.'
+
+  if (!isNonEmpty(values.phone)) errors.phone = 'Please enter a contact number.'
+  else if (!isValidPhone(values.phone))
+    errors.phone = 'Enter a valid PH number, e.g. 0917 123 4567.'
+
+  if (!isNonEmpty(values.eventDate)) errors.eventDate = 'Please choose your event date.'
+  else if (!isFutureDate(values.eventDate)) errors.eventDate = 'Please choose a future date.'
+
+  if (!isNonEmpty(values.venue)) errors.venue = 'Please enter the event venue or delivery address.'
+  else if (values.venue.length > LIMITS.venue) errors.venue = 'Venue is too long.'
 
   return errors
 }

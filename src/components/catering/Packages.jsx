@@ -4,17 +4,13 @@ import Alert from '../ui/Alert.jsx';
 import PackageCard from './PackageCard.jsx';
 
 /**
- * Packages are inquiry-only: there is no cart and no checkout. Selecting a
- * package pre-fills the inquiry form and moves focus to it. Kasalo and
- * Handaan additionally offer an inline calculator (see PackageCard) so a
- * customer can estimate a total before reaching out.
+ * Kasalo and Handaan show a permanent calculator and lead to /checkout (see
+ * PackageCard); Bespoke is quoted after a consultation, so it prefills the
+ * inquiry form and moves focus to it.
  *
- * `items-start` on the grid is deliberate: without it, CSS grid's default
- * `align-items: stretch` forces every card in a row to match the height of
- * the tallest one, so expanding one card's calculator would visually
- * stretch the *other* cards too even though nothing in them changed. With
- * `items-start`, each card sizes to its own content — expanding one has no
- * effect on its neighbours.
+ * Cards stretch to equal height (the grid default). The calculators are
+ * always open, so no card changes size and the Checkout / Inquire buttons
+ * line up along the bottom of the row.
  */
 export default function Packages({ onSelectPackage }) {
   return (
@@ -26,7 +22,7 @@ export default function Packages({ onSelectPackage }) {
         description="Indicative per-guest rates to frame your inquiry. Estimate your total below, or send us your details and we will reply with a firm, itemised quote."
       />
 
-      <ul className="mx-auto grid max-w-lg items-start gap-6 md:max-w-none md:grid-cols-3">
+      <ul className="mx-auto grid max-w-lg gap-6 md:max-w-none md:grid-cols-3">
         {PACKAGES.map((pkg) => (
           <PackageCard key={pkg.id} pkg={pkg} onSelectPackage={onSelectPackage} />
         ))}

@@ -4,6 +4,7 @@ import ScrollToTop from './components/layout/ScrollToTop.jsx'
 import HomePage from './pages/HomePage.jsx'
 import HotelsPage from './pages/HotelsPage.jsx'
 import HotelDetailPage from './pages/HotelDetailPage.jsx'
+import CheckoutPage from './pages/CheckoutPage.jsx'
 import NotFoundPage from './pages/NotFoundPage.jsx'
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
           <Route index element={<HomePage />} />
           <Route path="hotels" element={<HotelsPage />} />
           <Route path="hotels/:slug" element={<HotelDetailPage />} />
+          <Route path="checkout" element={<CheckoutPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
