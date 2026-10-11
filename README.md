@@ -4,7 +4,7 @@ React + Tailwind CSS website with two distinct transaction models:
 
 | Area | Flow | Payment |
 |---|---|---|
-| **Catering** | Browse packages → submit inquiry → owner receives email | None — inquiry only |
+| **Catering** | Browse packages → Kasalo / Handaan: Checkout and pay with Maya; Bespoke: submit inquiry → owner receives email | Maya Checkout (Kasalo, Handaan) |
 | **Hotel booking** | Choose hotel → pick dates & room → guest details → booking request | Maya (pending account activation) |
 
 ---
@@ -236,3 +236,14 @@ Hotel names are real partner properties. **All room types, rates, availability,
 ratings, amenities, and photos are placeholders** and must be replaced with
 details confirmed in writing by each property. Publishing invented rates for a
 real hotel carries commercial and legal risk for the client.
+
+### Catering payments
+
+Kasalo and Handaan are paid through the same Maya Checkout flow as hotel bookings
+(`POST /api/catering-orders`, status at `GET /api/catering-orders/:id/status`). Orders
+live in the `catering_orders` table — run `server/db/catering-orders.sql` once in
+Supabase after `schema.sql`. The server prices every order from its own copy of the
+rates in `server/routes/catering.js`; keep them identical to `src/data/catering.js`.
+The same webhook (`/api/maya/webhook`) serves both flows. A background check verifies
+unpaid bookings and orders with Maya a few minutes after creation, so a payment is
+confirmed even if the webhook never arrives.

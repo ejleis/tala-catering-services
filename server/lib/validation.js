@@ -14,6 +14,8 @@ const LIMITS = {
   requests: 1000,
   guests: { min: 1, max: 2000 },
   rooms: { min: 1, max: 10 },
+  days: { min: 1, max: 30 },
+  venue: 200,
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -123,4 +125,34 @@ function validateBooking(body) {
   return { data, errors }
 }
 
-module.exports = { validateInquiry, validateBooking, deFormula, LIMITS }
+/** Catering order: only the package id, guest/day counts and contact details are accepted — never a price. */
+function validateCateringOrder(body) {
+  const errors = {}
+
+  const data = {
+    name: str(body?.name, LIMITS.name),
+    email: str(body?.email, LIMITS.email).toLowerCase(),
+    phone: str(body?.phone, LIMITS.phone),
+    eventDate: str(body?.eventDate, 10),
+    venue: str(body?.venue, LIMITS.venue),
+    packageId: str(body?.packageId, 50),
+    guests: int(body?.guests, LIMITS.guests),
+    days: int(body?.days, LIMITS.days),
+  }
+
+  if (!data.name) errors.name = 'Please enter your full name.'
+  if (!data.email) errors.email = 'Please enter your email address.'
+  else if (!EMAIL_PATTERN.test(data.email)) errors.email = 'Please enter a valid email address.'
+  if (!data.phone) errors.phone = 'Please enter a contact number.'
+  else if (!PH_PHONE_PATTERN.test(data.phone)) errors.phone = 'Please enter a valid contact number.'
+  if (!data.eventDate) errors.eventDate = 'Please choose your event date.'
+  else if (!isFutureDate(data.eventDate)) errors.eventDate = 'Please choose a future date.'
+  if (!data.venue) errors.venue = 'Please enter the event venue or delivery address.'
+  if (!data.packageId) errors.packageId = 'Please choose a package.'
+  if (data.guests === null) errors.guests = 'Invalid guest count.'
+  if (data.days === null) errors.days = 'Invalid number of days.'
+
+  return { data, errors }
+}
+
+module.exports = { validateInquiry, validateBooking, validateCateringOrder, deFormula, LIMITS }

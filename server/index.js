@@ -15,6 +15,7 @@ const rateLimit = require('express-rate-limit')
 
 const inquiriesRouter = require('./routes/inquiries')
 const bookingsRouter = require('./routes/bookings')
+const cateringRouter = require('./routes/catering')
 const mayaRouter = require('./routes/maya')
 const maya = require('./lib/maya')
 const payments = require('./lib/payments')
@@ -63,6 +64,7 @@ app.use(
 
 app.use('/api/inquiries', inquiriesRouter)
 app.use('/api/bookings', bookingsRouter)
+app.use('/api/catering-orders', cateringRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 

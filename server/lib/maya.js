@@ -91,9 +91,10 @@ function isMayaHost(url) {
  * Creates a hosted checkout. `bookingId` becomes Maya's
  * requestReferenceNumber (a UUID, 36 chars — Maya's maximum).
  */
-async function createCheckout({ bookingId, totalCentavos }) {
+async function createCheckout({ bookingId, totalCentavos, kind }) {
   const front = process.env.FRONTEND_URL.replace(/\/+$/, '')
-  const ref = encodeURIComponent(bookingId)
+  // `kind` tells the result page which status endpoint to ask (display only).
+  const ref = `${encodeURIComponent(bookingId)}${kind === 'catering' ? '&k=catering' : ''}`
   const result = await call('POST', '/checkout/v1/checkouts', process.env.MAYA_PUBLIC_KEY, {
     totalAmount: { value: pesos(totalCentavos), currency: 'PHP' },
     requestReferenceNumber: bookingId,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { getBookingStatus } from '../lib/api.js'
+import { getBookingStatus, getCateringOrderStatus } from '../lib/api.js'
 import { formatDate } from '../lib/format.js'
 import { Container } from '../components/ui/Section.jsx'
 import Button from '../components/ui/Button.jsx'
@@ -28,6 +28,9 @@ export default function PaymentResultPage() {
   const [params] = useSearchParams()
   const bookingId = params.get('b') ?? ''
   const validId = UUID.test(bookingId)
+  // k=catering is display routing only: it picks which status endpoint to ask.
+  const catering = params.get('k') === 'catering'
+  const noun = catering ? 'order' : 'booking'
 
   const [booking, setBooking] = useState(null)
   const [state, setState] = useState(validId ? 'loading' : 'missing') // loading | ready | missing | error
@@ -40,7 +43,7 @@ export default function PaymentResultPage() {
 
     async function check(count) {
       try {
-        const result = await getBookingStatus(bookingId, { signal: controller.signal })
+        const result = await (catering ? getCateringOrderStatus : getBookingStatus)(bookingId, { signal: controller.signal })
         setBooking(result)
         setState('ready')
         setPolls(count)
@@ -59,13 +62,13 @@ export default function PaymentResultPage() {
       controller.abort()
       clearTimeout(timer)
     }
-  }, [bookingId, validId])
+  }, [bookingId, validId, catering])
 
   if (state === 'missing') {
     return (
-      <Shell icon="alert" title="We couldn't find that booking">
+      <Shell icon="alert" title={`We couldn't find that ${noun}`}>
         <p>The link may be incomplete. If you have just paid, please check your email for a confirmation.</p>
-        <Actions />
+        <Actions catering={catering} />
       </Shell>
     )
   }
@@ -83,9 +86,9 @@ export default function PaymentResultPage() {
       <Shell icon="alert" title="We couldn't check your payment">
         <p>
           Please do not pay again. If you completed the payment you will receive a confirmation
-          email shortly; otherwise contact us and quote your booking details.
+          email shortly; otherwise contact us and quote your {noun} details.
         </p>
-        <Actions />
+        <Actions catering={catering} />
       </Shell>
     )
   }
@@ -93,12 +96,12 @@ export default function PaymentResultPage() {
   switch (booking.status) {
     case 'CONFIRMED':
       return (
-        <Shell icon="check" title="Booking confirmed">
+        <Shell icon="check" title={catering ? 'Order confirmed' : 'Booking confirmed'}>
           <p className="mb-4">
             Thank you — your payment has been received. A confirmation has been emailed to you.
           </p>
-          <Details booking={booking} />
-          <Actions />
+          <Details booking={booking} catering={catering} />
+          <Actions catering={catering} />
         </Shell>
       )
     case 'PENDING_PAYMENT':
@@ -110,8 +113,8 @@ export default function PaymentResultPage() {
             payment went through, you will receive a confirmation email. Otherwise nothing has been
             charged.
           </p>
-          <Details booking={booking} />
-          <Actions />
+          <Details booking={booking} catering={catering} />
+          <Actions catering={catering} />
         </Shell>
       ) : (
         <Shell icon="spinner" title="Confirming your payment…">
@@ -128,10 +131,10 @@ export default function PaymentResultPage() {
           <p className="mb-4">
             {booking.status === 'CANCELLED'
               ? 'The payment was cancelled and you have not been charged.'
-              : 'Your payment was not completed, so this booking was not made. You have not been charged for it.'}
+              : 'Your payment was not completed, so this {noun} was not made. You have not been charged for it.'}
           </p>
-          <Details booking={booking} />
-          <Actions retry />
+          <Details booking={booking} catering={catering} />
+          <Actions retry catering={catering} />
         </Shell>
       )
   }
@@ -153,14 +156,25 @@ function Shell({ icon, title, children }) {
   )
 }
 
-function Details({ booking }) {
+function Details({ booking, catering }) {
   return (
     <dl className="mb-6 space-y-2 rounded-card bg-ink-50 p-4 text-left text-sm">
       <Row label="Reference" value={booking.reference} />
-      <Row label="Hotel" value={booking.hotelName} />
-      <Row label="Room" value={booking.roomName} />
-      <Row label="Check-in" value={formatDate(booking.checkIn)} />
-      <Row label="Check-out" value={formatDate(booking.checkOut)} />
+      {catering ? (
+        <>
+          <Row label="Package" value={booking.packageName} />
+          <Row label="Event date" value={formatDate(booking.eventDate)} />
+          <Row label="Guests" value={booking.guests} />
+          <Row label="Days" value={booking.days} />
+        </>
+      ) : (
+        <>
+          <Row label="Hotel" value={booking.hotelName} />
+          <Row label="Room" value={booking.roomName} />
+          <Row label="Check-in" value={formatDate(booking.checkIn)} />
+          <Row label="Check-out" value={formatDate(booking.checkOut)} />
+        </>
+      )}
       <Row label="Total" value={peso(booking.totalCentavos)} />
     </dl>
   )
@@ -175,16 +189,17 @@ function Row({ label, value }) {
   )
 }
 
-function Actions({ retry = false }) {
+function Actions({ retry = false, catering = false }) {
+  const again = catering ? '/#packages' : '/hotels'
   return (
     <div className="flex flex-wrap justify-center gap-3">
-      {retry && <Button to="/hotels">Try again</Button>}
+      {retry && <Button to={again}>Try again</Button>}
       <Button to="/" variant={retry ? 'outline' : 'primary'}>
         Back to home
       </Button>
       {!retry && (
-        <Link to="/hotels" className="inline-flex items-center text-sm font-semibold text-brand-700 hover:underline">
-          Browse hotels
+        <Link to={again} className="inline-flex items-center text-sm font-semibold text-brand-700 hover:underline">
+          {catering ? 'Browse packages' : 'Browse hotels'}
         </Link>
       )}
     </div>

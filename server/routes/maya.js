@@ -17,6 +17,7 @@ const rateLimit = require('express-rate-limit')
 const db = require('../lib/db')
 const maya = require('../lib/maya')
 const payments = require('../lib/payments')
+const cateringPayments = require('../lib/cateringPayments')
 const { getClientIp } = require('../lib/clientIp')
 
 const router = express.Router()
@@ -41,6 +42,11 @@ const limiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => getClientIp(req),
 })
+
+async function reconcileReference(ref) {
+  const { rowCount } = await db.query('select 1 from catering_orders where id = $1', [ref])
+  return rowCount > 0 ? cateringPayments.reconcileOrder(ref) : payments.reconcile(ref)
+}
 
 router.post('/webhook', limiter, async (req, res) => {
   const ip = getClientIp(req).replace(/^::ffff:/, '')
@@ -73,7 +79,8 @@ router.post('/webhook', limiter, async (req, res) => {
   res.status(200).json({ received: true })
 
   if (UUID.test(ref)) {
-    payments.reconcile(ref).catch((error) => console.error('[maya-webhook] reconcile failed:', error.message))
+    // The reference is one of OUR ids: a catering order if one exists with it, otherwise a hotel booking.
+    reconcileReference(ref).catch((error) => console.error('[maya-webhook] reconcile failed:', error.message))
   }
 })
 

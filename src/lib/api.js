@@ -78,4 +78,18 @@ export function getBookingStatus(bookingId, { signal } = {}) {
   return request(`/api/bookings/${encodeURIComponent(bookingId)}/status`, { method: 'GET', signal })
 }
 
+/**
+ * Submits a catering order (Kasalo / Handaan). Only the package id, guests,
+ * days and contact details are sent — the server prices the order itself and
+ * returns a Maya `checkoutUrl`.
+ */
+export function submitCateringOrder(values, { signal } = {}) {
+  return request('/api/catering-orders', { body: values, signal })
+}
+
+/** Payment status for a catering order (display only — the server decides the truth). */
+export function getCateringOrderStatus(orderId, { signal } = {}) {
+  return request(`/api/catering-orders/${encodeURIComponent(orderId)}/status`, { method: 'GET', signal })
+}
+
 export { ApiError }

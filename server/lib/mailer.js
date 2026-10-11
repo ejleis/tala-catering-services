@@ -149,6 +149,57 @@ async function sendBookingConfirmationToGuest(b) {
   if (error) throw new Error(`Resend: failed to send guest confirmation (${error.message ?? error.name})`)
 }
 
+function cateringRows(o) {
+  return `
+      ${row('Reference', o.reference)}
+      ${row('Package', o.package_name)}
+      ${row('Event date', o.event_date)}
+      ${row('Venue / delivery address', o.venue)}
+      ${row('Guests', o.guests)}
+      ${row('Days', o.days)}
+      ${row('Total paid', peso(o.total_centavos))}`
+}
+
+/** Sent ONLY after the catering payment has been verified with Maya. */
+async function sendCateringConfirmedToOwner(o) {
+  const html = `
+    <h2 style="font-family:Georgia,serif">Catering Order PAID — ${escapeHtml(o.reference)}</h2>
+    <table style="font-family:Arial,sans-serif;font-size:14px;border-collapse:collapse">
+      ${cateringRows(o)}
+      ${row('Customer', o.customer_name)}
+      ${row('Email', o.customer_email)}
+      ${row('Phone', o.customer_phone)}
+      ${row('Maya receipt', o.receipt_number)}
+    </table>
+  `
+  const { error } = await resend.emails.send({
+    from: process.env.MAIL_FROM,
+    to: process.env.OWNER_EMAIL,
+    replyTo: `${safeHeader(o.customer_name)} <${safeHeader(o.customer_email)}>`,
+    subject: `PAID catering order ${safeHeader(o.reference)} — ${safeHeader(o.package_name)}`,
+    html,
+  })
+  if (error) throw new Error(`Resend: failed to send owner catering confirmation (${error.message ?? error.name})`)
+}
+
+async function sendCateringConfirmationToCustomer(o) {
+  const { error } = await resend.emails.send({
+    from: process.env.MAIL_FROM,
+    to: safeHeader(o.customer_email),
+    subject: `Order confirmed ${safeHeader(o.reference)} — Tala's Event Catering Services`,
+    html: `
+      <p>Hi ${escapeHtml(o.customer_name)},</p>
+      <p>Thank you — we have received your payment and your catering order is confirmed.</p>
+      <table style="font-family:Arial,sans-serif;font-size:14px;border-collapse:collapse">
+        ${cateringRows(o)}
+      </table>
+      <p>Please keep this email and your reference number. For any changes or questions, simply reply to this email.</p>
+      <p>— Tala's Event Catering Services</p>
+    `,
+  })
+  if (error) throw new Error(`Resend: failed to send customer confirmation (${error.message ?? error.name})`)
+}
+
 /** Plain internal alert for anything that needs a human (mismatch, late payment…). */
 async function sendOwnerAlert(subject, lines) {
   const html = `
@@ -171,6 +222,8 @@ module.exports = {
   sendInquiryAcknowledgement,
   sendBookingConfirmedToOwner,
   sendBookingConfirmationToGuest,
+  sendCateringConfirmedToOwner,
+  sendCateringConfirmationToCustomer,
   sendOwnerAlert,
   escapeHtml,
   safeHeader,

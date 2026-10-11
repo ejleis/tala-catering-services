@@ -1,6 +1,7 @@
 /**
- * Catering content. Prices are indicative starting rates used to frame an
- * inquiry — no online payment is taken for catering.
+ * Catering content. Kasalo and Handaan can be paid online through Maya; the
+ * server prices every order from its OWN copy of these rates
+ * (server/routes/catering.js) — keep the two identical. Bespoke is inquiry-only.
  *
  * [NEEDS PROOF] All package rates and inclusions are placeholders pending
  * the client's confirmed pricing sheet.

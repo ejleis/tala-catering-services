@@ -211,6 +211,19 @@ async function dispatchEmails(bookingId) {
 /** Background housekeeping: expire stale unpaid bookings, retry failed emails. */
 async function sweep() {
   if (!maya.isEnabled()) return
+
+  // Safety net for a missing webhook: a few minutes after creation, ask Maya
+  // about every still-unpaid booking, so a customer who paid and closed the
+  // tab is confirmed without waiting for the hour-long expiry below.
+  const recent = await db.query(
+    `select id from bookings
+      where status in ('PENDING_PAYMENT', 'PAYMENT_PROCESSING')
+        and created_at < now() - interval '3 minutes'
+        and expires_at >= now() - interval '10 minutes'
+      order by created_at limit 20`,
+  )
+  for (const { id } of recent.rows) await reconcile(id)
+
   const stale = await db.query(
     `select id from bookings
       where status in ('PENDING_PAYMENT', 'PAYMENT_PROCESSING')
@@ -235,6 +248,14 @@ async function sweep() {
     [MAX_EMAIL_ATTEMPTS],
   )
   for (const { id } of retry.rows) await dispatchEmails(id)
+
+  // Catering orders have their own table and the same rules. A problem there
+  // must never stop the hotel sweep above, so it is isolated.
+  try {
+    await require('./cateringPayments').sweep()
+  } catch (error) {
+    console.error('[payments] catering sweep error:', error.message)
+  }
 }
 
 function startSweeper() {
@@ -242,4 +263,8 @@ function startSweeper() {
   timer.unref()
 }
 
-module.exports = { reconcile, dispatchEmails, sweep, startSweeper, getBooking }
+module.exports = {
+  reconcile, dispatchEmails, sweep, startSweeper, getBooking,
+  // shared with lib/cateringPayments.js so both flows apply identical checks
+  helpers: { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner },
+}

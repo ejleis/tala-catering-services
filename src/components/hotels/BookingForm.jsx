@@ -8,22 +8,7 @@ import Alert from '../ui/Alert.jsx'
 import { LockIcon } from '../ui/Icons.jsx'
 import { calculateTotals } from './BookingSummary.jsx'
 import { formatPeso } from '../../lib/format.js'
-
-/**
- * Only follow a payment URL that is HTTPS on a Maya domain. The URL comes from
- * our own server, but a browser redirect is cheap to constrain, so we do.
- */
-function isMayaCheckoutUrl(value) {
-  try {
-    const url = new URL(value)
-    // Local testing only: Vite sets DEV false in production builds, so this
-    // exception cannot exist on the live site.
-    if (import.meta.env.DEV && url.hostname === 'localhost') return true
-    return url.protocol === 'https:' && /(^|\.)(paymaya\.com|maya\.ph)$/.test(url.hostname)
-  } catch {
-    return false
-  }
-}
+import { isMayaCheckoutUrl } from '../../lib/maya.js'
 
 /**
  * Guest details + booking submission.
