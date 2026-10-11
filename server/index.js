@@ -1,13 +1,10 @@
 /**
- * Reference API server for Tala's Event Catering Services.
+ * API server for Tala's Event Catering Services.
  *
- * Responsibilities:
- *   POST /api/inquiries  — validate a catering inquiry and email the owner
- *   POST /api/bookings   — validate a hotel booking request and email the owner
- *   POST /api/maya/webhook — (stub) server-side payment verification
- *
- * This is intentionally storage-agnostic: swap the in-memory record keeping for
- * your database of choice. What it demonstrates is the security posture.
+ *   POST /api/inquiries        — validate a catering inquiry and email the owner
+ *   POST /api/bookings         — validate a hotel booking, store it, start Maya Checkout
+ *   GET  /api/bookings/:id/status — payment status for the result pages
+ *   POST /api/maya/webhook     — Maya payment notifications (verified server-side)
  */
 require('dotenv').config()
 
@@ -18,6 +15,10 @@ const rateLimit = require('express-rate-limit')
 
 const inquiriesRouter = require('./routes/inquiries')
 const bookingsRouter = require('./routes/bookings')
+const mayaRouter = require('./routes/maya')
+const maya = require('./lib/maya')
+const payments = require('./lib/payments')
+const { getClientIp } = require('./lib/clientIp')
 
 const app = express()
 
@@ -35,13 +36,17 @@ app.disable('x-powered-by')
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN?.split(',').map((value) => value.trim()) ?? false,
-    methods: ['POST'],
+    methods: ['GET', 'POST'],
     maxAge: 86400,
   }),
 )
 
 // Cap body size — an unbounded JSON parser is a trivial denial-of-service.
 app.use(express.json({ limit: '32kb' }))
+
+// Maya's webhook is server-to-server: mounted before the browser-oriented
+// global limiter below and protected by its own IP allow-list instead.
+app.use('/api/maya', mayaRouter)
 
 // Global throttle, with a tighter limit applied per-route below.
 app.use(
@@ -51,6 +56,7 @@ app.use(
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => getClientIp(req),
     message: { message: 'Too many requests. Please try again later.' },
   }),
 )
@@ -66,7 +72,17 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ message: 'Something went wrong. Please try again.' })
 })
 
-const port = Number(process.env.PORT ?? 3001)
-app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`)
-})
+module.exports = app
+
+if (require.main === module) {
+  const port = Number(process.env.PORT ?? 3001)
+  app.listen(port, () => {
+    console.log(`API listening on http://localhost:${port}`)
+    console.log(
+      maya.isEnabled()
+        ? `Maya payments: ENABLED (${maya.environment()})`
+        : 'Maya payments: DISABLED (set MAYA_ENVIRONMENT, MAYA_PUBLIC_KEY, MAYA_SECRET_KEY, FRONTEND_URL)',
+    )
+    if (process.env.DATABASE_URL) payments.startSweeper()
+  })
+}

@@ -6,7 +6,10 @@
  *
  * It implements only what lib/maya.js calls, plus a tiny "checkout page" with
  * Pay / Fail / Cancel buttons. Never deploy this and never set MAYA_API_BASE
- * on Render.
+ * on Render. The API only talks to it when BOTH of these are set in
+ * server/.env:
+ *     ALLOW_FAKE_MAYA=true
+ *     MAYA_API_BASE=http://localhost:4000
  */
 const http = require('node:http')
 

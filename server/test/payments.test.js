@@ -53,6 +53,7 @@ function setEnv(mayaPort) {
   Object.assign(process.env, {
     DATABASE_URL: TEST_DB,
     MAYA_ENVIRONMENT: 'production',
+    ALLOW_FAKE_MAYA: 'true',
     MAYA_API_BASE: `http://127.0.0.1:${mayaPort}`,
     MAYA_PUBLIC_KEY: fake.publicKey,
     MAYA_SECRET_KEY: fake.secretKey,
@@ -138,6 +139,14 @@ test('creates a booking and a Maya checkout using the SERVER-computed total', as
   assert.equal(row.status, 'PENDING_PAYMENT')
   assert.equal(row.total_centavos, 1_792_000)
   assert.equal((await paymentRow(body.bookingId)).maya_checkout_id, 'chk-1')
+})
+
+test('MAYA_API_BASE is ignored unless ALLOW_FAKE_MAYA=true', async () => {
+  const maya = require('../lib/maya')
+  assert.match(maya.environment(), /production/)
+  delete process.env.ALLOW_FAKE_MAYA
+  await assert.rejects(() => maya.createCheckout({ bookingId: '123e4567-e89b-42d3-a456-426614174000', totalCentavos: 100 }))
+  assert.equal(fake.checkouts.length, 0) // nothing reached the fake server
 })
 
 test('rejects unknown rooms and refuses bookings when payments are not configured', async () => {

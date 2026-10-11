@@ -197,8 +197,6 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 ### Still required before launch
 
 - [ ] HTTPS enforced (Maya requires it)
-- [ ] Real database — the server catalogue and bookings are currently in-memory
-- [ ] Booking persistence with status: `PENDING_PAYMENT → PAID → CONFIRMED`
 - [ ] Availability/inventory checks with row-level locking to prevent double booking
 - [ ] Replace `[NEEDS PROOF]` placeholders in `src/data/`
 - [ ] Privacy policy — you are collecting personal data under the PH Data
@@ -206,29 +204,31 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 
 ---
 
-## Maya integration (when the account is ready)
+## Maya payments
 
-Currently `POST /api/bookings` records the request and emails the owner. The
-booking form states plainly that payment is not yet active.
+Hotel bookings are paid through Maya Checkout (hosted page):
 
-To switch it on:
+1. `POST /api/bookings` validates the request, computes the price **on the
+   server**, stores the booking (`PENDING_PAYMENT`) and a payment row, creates
+   a Maya checkout and returns `checkoutUrl`; the browser is redirected there.
+2. Maya sends the customer back to `/payment/success|failure|cancel?b=<id>`.
+   These pages are **display-only** and poll `GET /api/bookings/:id/status`.
+3. A booking becomes `CONFIRMED` only in `server/lib/payments.js`, after the
+   server has asked Maya (secret key) about that booking and the reference,
+   amount and currency match the database. This runs from Maya's webhook
+   (`POST /api/maya/webhook`) **and** from the status poll, so a delayed or
+   blocked webhook cannot leave a paid customer unconfirmed.
+4. Webhooks are not signed by Maya: they are accepted only from Maya's
+   published IPs (`CLIENT_IP_HEADER`), stored in `webhook_events`, and never
+   believed — they only trigger step 3. Processing is idempotent.
 
-1. Put `MAYA_SECRET_KEY` in the **server** `.env`. Never in a `VITE_` variable.
-2. In `server/routes/bookings.js`, after validation, call Maya's Checkout API
-   server-side with the **server-computed** total and return `{ checkoutUrl }`.
-3. In `src/components/hotels/BookingForm.jsx`, uncomment the redirect in
-   `onSuccess` (one line — already written).
-4. Implement the webhook handler in `server/routes/bookings.js`. Signature
-   verification and timing-safe comparison are already scaffolded.
+Database schema: `server/db/schema.sql` (run once in the Supabase SQL editor).
+Tests: `cd server && TEST_DATABASE_URL=... npm test` (fake Maya + real Postgres).
 
-**Non-negotiable:** a booking becomes `PAID` only from a verified webhook.
-Never because the browser reached a success URL — that URL is trivially
-guessable and forgeable.
-
-Verify header names and the exact API against Maya's current official docs
-before going live; do not rely on this scaffold's assumptions.
-
----
+Required server variables: `DATABASE_URL`, `MAYA_ENVIRONMENT`,
+`MAYA_PUBLIC_KEY`, `MAYA_SECRET_KEY`, `FRONTEND_URL`, `CLIENT_IP_HEADER`.
+If any Maya variable is missing the API refuses bookings (503) instead of
+taking ones that cannot be paid.
 
 ## Demo data notice
 

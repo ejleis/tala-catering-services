@@ -19,9 +19,18 @@ function environment() {
   return value in HOSTS ? value : null
 }
 
+/**
+ * Local-testing hook: MAYA_API_BASE redirects every Maya call to a fake
+ * server (test/fake-maya.js). It is honoured ONLY when ALLOW_FAKE_MAYA=true
+ * is also set, so a stray MAYA_API_BASE can never reroute real payments.
+ * Never set either of them on the live server.
+ */
+function fakeMayaBase() {
+  return process.env.ALLOW_FAKE_MAYA === 'true' && process.env.MAYA_API_BASE ? process.env.MAYA_API_BASE : null
+}
+
 function baseUrl() {
-  // MAYA_API_BASE exists only so automated tests can point at a fake server.
-  return process.env.MAYA_API_BASE || HOSTS[environment()]
+  return fakeMayaBase() || HOSTS[environment()]
 }
 
 function isEnabled() {
@@ -97,7 +106,7 @@ async function createCheckout({ bookingId, totalCentavos }) {
 
   if (!result?.checkoutId || !result?.redirectUrl) throw new Error('Maya returned an incomplete checkout response')
   // The browser will be sent to this URL, so only follow it if it is HTTPS on a Maya domain.
-  if (!process.env.MAYA_API_BASE && !isMayaHost(result.redirectUrl)) {
+  if (!fakeMayaBase() && !isMayaHost(result.redirectUrl)) {
     throw new Error('Maya returned an unexpected checkout host')
   }
   return { checkoutId: String(result.checkoutId), redirectUrl: result.redirectUrl }
