@@ -2,7 +2,10 @@ const express = require('express');
 const crypto = require('node:crypto');
 const rateLimit = require('express-rate-limit');
 const { validateBooking } = require('../lib/validation');
-const { sendBookingToOwner } = require('../lib/mailer');
+const db = require('../lib/db');
+const maya = require('../lib/maya');
+const payments = require('../lib/payments');
+const { getClientIp } = require('../lib/clientIp');
 
 const router = express.Router();
 
@@ -11,8 +14,20 @@ const submitLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
   message: { message: 'Too many booking requests. Please try again later.' },
 });
+
+const statusLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
+  message: { message: 'Too many requests. Please slow down.' },
+});
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Server-side catalogue.
@@ -44,20 +59,54 @@ const CATALOGUE = {
   },
 };
 
-const TAX_RATE = 0.12;
-
 function buildReference() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   // crypto.randomInt is unpredictable; Math.random is not and must never be
-  // used for anything a user could try to guess or enumerate.
+  // used for anything a user could try to guess or enumerate. (The reference
+  // is a human-friendly label only — the booking id is the unguessable UUID.)
   const suffix = crypto.randomInt(0, 10_000).toString().padStart(4, '0');
   return `HB-${date}-${suffix}`;
+}
+
+// [NEEDS PROOF] The 12% figure is a placeholder until the client confirms the
+// real tax treatment (is VAT already included in the hotels' rates?). Override
+// without a code change by setting TAX_RATE (e.g. 0 or 0.12) on the server.
+function taxRate() {
+  const value = Number.parseFloat(process.env.TAX_RATE ?? '0.12');
+  return Number.isFinite(value) && value >= 0 && value <= 0.3 ? value : 0.12;
+}
+
+async function insertBooking(client, row) {
+  // Reference collisions are very unlikely but cheap to handle: retry.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const { rows } = await client.query(
+        `insert into bookings
+           (reference, hotel_slug, room_id, hotel_name, room_name, guest_name, guest_email, guest_phone,
+            special_requests, check_in, check_out, nights, guests, rooms,
+            rate_centavos, subtotal_centavos, tax_centavos, total_centavos, expires_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18, now() + interval '60 minutes')
+         returning id, reference`,
+        [buildReference(), ...row],
+      );
+      return rows[0];
+    } catch (error) {
+      if (error.code !== '23505' || attempt === 4) throw error;
+    }
+  }
+  return null;
 }
 
 router.post('/', submitLimiter, async (req, res, next) => {
   try {
     if (typeof req.body?.website === 'string' && req.body.website.trim() !== '') {
       return res.status(200).json({ ok: true });
+    }
+
+    // Safety switch: with no Maya keys / environment / database we refuse to
+    // take bookings rather than silently accept ones that can never be paid.
+    if (!maya.isEnabled() || !process.env.DATABASE_URL) {
+      return res.status(503).json({ message: 'Online booking is temporarily unavailable. Please contact us directly.' });
     }
 
     const { data, errors } = validateBooking(req.body);
@@ -93,67 +142,91 @@ router.post('/', submitLimiter, async (req, res, next) => {
       });
     }
 
-    const subtotal = room.rate * nights * data.rooms;
-    const total = subtotal + Math.round(subtotal * TAX_RATE);
-    const reference = buildReference();
+    // All money is whole centavos from here on; the browser's numbers are never used.
+    const rateCentavos = Math.round(room.rate * 100);
+    const subtotal = rateCentavos * nights * data.rooms;
+    const tax = Math.round(subtotal * taxRate());
+    const total = subtotal + tax;
 
-    // TODO (when Maya is live):
-    //   1. Persist the booking with status PENDING_PAYMENT and this reference.
-    //   2. Call Maya's Checkout API server-side with MAYA_SECRET_KEY to create
-    //      a checkout session for `total`.
-    //   3. Return { reference, checkoutUrl } and let the frontend redirect.
-    //   4. Mark the booking PAID only from the verified webhook below — never
-    //      because the browser reached a success URL.
+    const booking = await db.tx(async (client) => {
+      const created = await insertBooking(client, [
+        data.hotelSlug, data.roomId, hotel.name, room.name,
+        data.name, data.email, data.phone, data.requests || null,
+        data.checkIn, data.checkOut, nights, data.guests, data.rooms,
+        rateCentavos, subtotal, tax, total,
+      ]);
+      await client.query(
+        `insert into payments (booking_id, request_reference_number, amount_centavos)
+         values ($1, $2, $3)`,
+        [created.id, created.id, total],
+      );
+      return created;
+    });
 
-    await sendBookingToOwner(
-      {
-        ...data,
-        hotelName: hotel.name,
-        roomName: room.name,
-        nights,
-        total: `PHP ${total.toLocaleString()}`,
-      },
-      reference,
-    );
+    let checkout;
+    try {
+      checkout = await maya.createCheckout({ bookingId: booking.id, totalCentavos: total });
+    } catch (error) {
+      console.error('[bookings] Maya checkout creation failed:', error.message, error.mayaCode ?? '');
+      await db.query(`update payments set status = 'FAILED' where booking_id = $1`, [booking.id]);
+      await db.query(`update bookings set status = 'PAYMENT_FAILED' where id = $1`, [booking.id]);
+      return res.status(502).json({ message: 'We could not start the payment. Please try again in a moment.' });
+    }
 
-    return res.status(201).json({ ok: true, reference, status: 'PENDING_PAYMENT' });
+    await db.query(`update payments set maya_checkout_id = $2 where booking_id = $1`, [booking.id, checkout.checkoutId]);
+
+    return res.status(201).json({
+      ok: true,
+      reference: booking.reference,
+      bookingId: booking.id,
+      status: 'PENDING_PAYMENT',
+      checkoutUrl: checkout.redirectUrl,
+    });
   } catch (error) {
     return next(error);
   }
 });
 
 /**
- * Maya webhook — payment verification endpoint (stub).
+ * Status for the payment result pages. The booking id is an unguessable
+ * UUID, and the response carries no personal data (no name, email or phone).
  *
- * Note this route needs the RAW body to verify the signature, so mount it with
- * express.raw() before the global express.json() parser in a real deployment.
- * Verifying with a parsed-and-re-stringified body will produce a different byte
- * sequence and the signature check will fail (or worse, be skipped).
+ * If payment is still pending we ask Maya right now (reconcile), so a
+ * customer is confirmed even if the webhook is delayed or blocked. A
+ * "success" redirect alone never changes anything — only Maya's answer does.
  */
-router.post('/maya/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  const signature = req.get('Maya-Signature'); // confirm the real header name in Maya's docs
-  const secret = process.env.MAYA_WEBHOOK_SECRET;
+const lastCheck = new Map();
 
-  if (!secret || !signature) return res.status(400).end();
+router.get('/:id/status', statusLimiter, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!UUID.test(id)) return res.status(404).json({ message: 'Not found.' });
 
-  const expected = crypto.createHmac('sha256', secret).update(req.body).digest('hex');
+    let booking = await payments.getBooking(id);
+    if (!booking) return res.status(404).json({ message: 'Not found.' });
 
-  // timingSafeEqual prevents a timing side channel that could let an attacker
-  // discover a valid signature byte by byte.
-  const signatureBuffer = Buffer.from(signature, 'utf8');
-  const expectedBuffer = Buffer.from(expected, 'utf8');
-  if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-    return res.status(401).end();
+    if (['PENDING_PAYMENT', 'PAYMENT_PROCESSING'].includes(booking.status)) {
+      const now = Date.now();
+      if (now - (lastCheck.get(id) ?? 0) > 4000) {
+        lastCheck.set(id, now);
+        if (lastCheck.size > 5000) lastCheck.clear();
+        booking = (await payments.reconcile(id)) ?? booking;
+      }
+    }
+
+    return res.json({
+      reference: booking.reference,
+      status: booking.status,
+      hotelName: booking.hotel_name,
+      roomName: booking.room_name,
+      checkIn: booking.check_in,
+      checkOut: booking.check_out,
+      nights: booking.nights,
+      totalCentavos: booking.total_centavos,
+    });
+  } catch (error) {
+    return next(error);
   }
-
-  // const event = JSON.parse(req.body.toString('utf8'))
-  // Idempotency: ignore an event id already processed — providers retry, and
-  // double-processing would double-confirm or double-email.
-  // Then: mark booking PAID/CONFIRMED, store the Maya transaction id, and
-  // queue the confirmation emails (retryable — never fail the payment because
-  // an email bounced).
-
-  return res.status(200).json({ received: true });
 });
 
 module.exports = router;

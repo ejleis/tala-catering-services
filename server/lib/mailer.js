@@ -91,42 +91,87 @@ async function sendInquiryAcknowledgement(data) {
   if (error) throw new Error(`Resend: failed to send acknowledgement (${error.message ?? error.name})`)
 }
 
-async function sendBookingToOwner(data, reference) {
+const peso = (centavos) =>
+  `PHP ${(Number(centavos) / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+function bookingRows(b) {
+  return `
+      ${row('Reference', b.reference)}
+      ${row('Hotel', b.hotel_name)}
+      ${row('Room', b.room_name)}
+      ${row('Check-in', b.check_in)}
+      ${row('Check-out', b.check_out)}
+      ${row('Nights', b.nights)}
+      ${row('Guests', b.guests)}
+      ${row('Rooms', b.rooms)}
+      ${row('Total paid', peso(b.total_centavos))}`
+}
+
+/** Sent ONLY after payment has been verified with Maya. */
+async function sendBookingConfirmedToOwner(b, { note } = {}) {
   const html = `
-    <h2 style="font-family:Georgia,serif">New Hotel Booking Request</h2>
-    <p style="font-family:Arial,sans-serif"><strong>Reference:</strong> ${escapeHtml(reference)}<br>
-    <strong>Status:</strong> PENDING_PAYMENT (Maya not yet connected)</p>
+    <h2 style="font-family:Georgia,serif">Hotel Booking PAID — ${escapeHtml(b.reference)}</h2>
+    ${note ? `<p style="font-family:Arial,sans-serif;color:#b45309"><strong>${escapeHtml(note)}</strong></p>` : ''}
     <table style="font-family:Arial,sans-serif;font-size:14px;border-collapse:collapse">
-      ${row('Hotel', data.hotelName)}
-      ${row('Room', data.roomName)}
-      ${row('Guest', data.name)}
-      ${row('Email', data.email)}
-      ${row('Phone', data.phone)}
-      ${row('Check-in', data.checkIn)}
-      ${row('Check-out', data.checkOut)}
-      ${row('Nights', data.nights)}
-      ${row('Guests', data.guests)}
-      ${row('Rooms', data.rooms)}
-      ${row('Estimated total', data.total)}
-      ${row('Special requests', data.requests)}
+      ${bookingRows(b)}
+      ${row('Guest', b.guest_name)}
+      ${row('Email', b.guest_email)}
+      ${row('Phone', b.guest_phone)}
+      ${row('Special requests', b.special_requests)}
+      ${row('Maya receipt', b.receipt_number)}
     </table>
   `
-
   const { error } = await resend.emails.send({
     from: process.env.MAIL_FROM,
     to: process.env.OWNER_EMAIL,
-    replyTo: `${safeHeader(data.name)} <${safeHeader(data.email)}>`,
-    subject: `Booking request ${safeHeader(reference)} — ${safeHeader(data.hotelName)}`,
+    replyTo: `${safeHeader(b.guest_name)} <${safeHeader(b.guest_email)}>`,
+    subject: `PAID booking ${safeHeader(b.reference)} — ${safeHeader(b.hotel_name)}`,
     html,
   })
+  if (error) throw new Error(`Resend: failed to send owner confirmation (${error.message ?? error.name})`)
+}
 
-  if (error) throw new Error(`Resend: failed to send booking notification (${error.message ?? error.name})`)
+async function sendBookingConfirmationToGuest(b) {
+  const { error } = await resend.emails.send({
+    from: process.env.MAIL_FROM,
+    to: safeHeader(b.guest_email),
+    subject: `Booking confirmed ${safeHeader(b.reference)} — Tala's Event Catering Services`,
+    html: `
+      <p>Hi ${escapeHtml(b.guest_name)},</p>
+      <p>Thank you — we have received your payment and your booking is confirmed.</p>
+      <table style="font-family:Arial,sans-serif;font-size:14px;border-collapse:collapse">
+        ${bookingRows(b)}
+      </table>
+      <p>Please keep this email and your reference number. If you have questions, simply reply to this email.</p>
+      <p>— Tala's Event Catering Services</p>
+    `,
+  })
+  if (error) throw new Error(`Resend: failed to send guest confirmation (${error.message ?? error.name})`)
+}
+
+/** Plain internal alert for anything that needs a human (mismatch, late payment…). */
+async function sendOwnerAlert(subject, lines) {
+  const html = `
+    <h2 style="font-family:Georgia,serif">Payment attention needed</h2>
+    <ul style="font-family:Arial,sans-serif;font-size:14px">
+      ${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+    </ul>
+  `
+  const { error } = await resend.emails.send({
+    from: process.env.MAIL_FROM,
+    to: process.env.OWNER_EMAIL,
+    subject: safeHeader(subject),
+    html,
+  })
+  if (error) throw new Error(`Resend: failed to send alert (${error.message ?? error.name})`)
 }
 
 module.exports = {
   sendInquiryToOwner,
   sendInquiryAcknowledgement,
-  sendBookingToOwner,
+  sendBookingConfirmedToOwner,
+  sendBookingConfirmationToGuest,
+  sendOwnerAlert,
   escapeHtml,
   safeHeader,
 }

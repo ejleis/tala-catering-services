@@ -10,15 +10,29 @@ import { calculateTotals } from './BookingSummary.jsx'
 import { formatPeso } from '../../lib/format.js'
 
 /**
+ * Only follow a payment URL that is HTTPS on a Maya domain. The URL comes from
+ * our own server, but a browser redirect is cheap to constrain, so we do.
+ */
+function isMayaCheckoutUrl(value) {
+  try {
+    const url = new URL(value)
+    // Local testing only: Vite sets DEV false in production builds, so this
+    // exception cannot exist on the live site.
+    if (import.meta.env.DEV && url.hostname === 'localhost') return true
+    return url.protocol === 'https:' && /(^|\.)(paymaya\.com|maya\.ph)$/.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Guest details + booking submission.
  *
- * PAYMENT STATUS: Maya is not yet connected (pending the client's Maya
- * Business account). Until then the server records the booking as
- * PENDING_PAYMENT and emails the owner, and this form says so plainly rather
- * than implying a confirmed reservation.
- *
- * When Maya goes live, the server will return a `checkoutUrl` from this same
- * endpoint and the only change needed here is the redirect in `onSuccess`.
+ * On submit the server stores the booking as PENDING_PAYMENT and returns a
+ * Maya hosted-checkout URL; the browser is redirected there to pay. The
+ * booking is confirmed only after the server has verified the payment with
+ * Maya — arriving back on the site never confirms anything by itself (see
+ * PaymentResultPage).
  */
 export default function BookingForm({ hotel, room, search }) {
   const [values, setValues] = useState({
@@ -28,9 +42,9 @@ export default function BookingForm({ hotel, room, search }) {
     requests: '',
     website: '', // honeypot
   })
-  const [reference, setReference] = useState(null)
+  const [checkoutUrl, setCheckoutUrl] = useState(null)
 
-  const { status, errors, formError, handleSubmit, reset } = useSubmitForm({
+  const { status, errors, formError, handleSubmit } = useSubmitForm({
     validate: (formValues) =>
       validateBooking({
         ...formValues,
@@ -52,9 +66,10 @@ export default function BookingForm({ hotel, room, search }) {
         options,
       ),
     onSuccess: (result) => {
-      // Once Maya is live the server returns a hosted checkout URL:
-      // if (result?.checkoutUrl) { window.location.assign(result.checkoutUrl); return }
-      setReference(result?.reference ?? null)
+      if (result?.checkoutUrl && isMayaCheckoutUrl(result.checkoutUrl)) {
+        setCheckoutUrl(result.checkoutUrl)
+        window.location.assign(result.checkoutUrl)
+      }
     },
   })
 
@@ -67,28 +82,17 @@ export default function BookingForm({ hotel, room, search }) {
   if (status === 'success') {
     return (
       <div className="rounded-panel border border-ink-200 bg-white p-8 text-center">
-        <span className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-2xl">
-          ✓
+        <span className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <LockIcon size={26} />
         </span>
-        <h2 className="mb-2 text-2xl">Booking request received</h2>
-        {reference && (
-          <p className="mb-3 font-display text-lg font-semibold">Reference: {reference}</p>
-        )}
+        <h2 className="mb-2 text-2xl">Taking you to secure payment…</h2>
         <p className="mx-auto mb-6 max-w-md text-sm text-ink-500">
-          We have sent your request to our team and emailed you a copy. Your room is not yet
-          confirmed — we will contact you shortly to arrange payment and confirm availability with
-          the property.
+          You are being sent to Maya to pay. Your booking is confirmed only after your payment is
+          received.
         </p>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setValues({ name: '', email: '', phone: '', requests: '', website: '' })
-            setReference(null)
-            reset()
-          }}
-        >
-          Make another booking
-        </Button>
+        {checkoutUrl && (
+          <Button href={checkoutUrl}>Continue to Maya</Button>
+        )}
       </div>
     )
   }
@@ -107,7 +111,7 @@ export default function BookingForm({ hotel, room, search }) {
     >
       <h2 className="mb-1 font-display text-xl font-semibold">Guest details</h2>
       <p className="mb-6 text-sm text-ink-500">
-        Tell us who is staying so we can hold the room while we confirm availability.
+        Tell us who is staying. You will pay securely on the next step.
       </p>
 
       {formError && (
@@ -203,9 +207,8 @@ export default function BookingForm({ hotel, room, search }) {
       </div>
 
       <Alert tone="info" className="mt-6">
-        <strong>Online payment is not active yet.</strong> Maya checkout will be enabled once the
-        business Maya account is verified. For now we will confirm your booking and arrange payment
-        with you directly.
+        <strong>You will pay on Maya&apos;s secure page.</strong> Your booking is confirmed only
+        after your payment is received, and we never see or store your card details.
       </Alert>
 
       <Button
@@ -216,11 +219,12 @@ export default function BookingForm({ hotel, room, search }) {
         className="mt-6 w-full"
       >
         <LockIcon size={16} />
-        {busy ? 'Sending request…' : `Request Booking${total ? ` · ${formatPeso(total)}` : ''}`}
+        {busy ? 'Preparing payment…' : `Pay with Maya${total ? ` · ${formatPeso(total)}` : ''}`}
       </Button>
 
       <p className="mt-3 text-center text-xs text-ink-500">
-        Submitting does not charge you. You will receive an email copy of this request.
+        You will be charged only on Maya&apos;s payment page, and you will receive a confirmation
+        email once your payment is received.
       </p>
     </form>
   )

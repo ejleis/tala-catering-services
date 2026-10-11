@@ -1,6 +1,7 @@
 const express = require('express')
 const rateLimit = require('express-rate-limit')
 const { validateInquiry } = require('../lib/validation')
+const { getClientIp } = require('../lib/clientIp')
 const { sendInquiryToOwner, sendInquiryAcknowledgement } = require('../lib/mailer')
 
 const router = express.Router()
@@ -11,6 +12,7 @@ const submitLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
   message: { message: 'Too many inquiries from this address. Please try again later.' },
 })
 

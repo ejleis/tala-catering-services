@@ -64,15 +64,18 @@ export function submitInquiry(values, { signal } = {}) {
 }
 
 /**
- * Submits a hotel booking request.
- *
- * While the client's Maya Business account is still being set up, the server
- * records the booking as PENDING_PAYMENT and notifies the owner. Once Maya is
- * live, the same endpoint will additionally return a `checkoutUrl` created
- * server-side, and the caller should redirect the browser to it.
+ * Submits a hotel booking. The server stores it as PENDING_PAYMENT, creates a
+ * Maya Checkout session and returns `checkoutUrl`, which the caller redirects
+ * the browser to. A booking is only ever confirmed by the server after Maya
+ * verifies the payment.
  */
 export function submitBooking(values, { signal } = {}) {
   return request('/api/bookings', { body: values, signal })
+}
+
+/** Payment status for a booking (display only — the server decides the truth). */
+export function getBookingStatus(bookingId, { signal } = {}) {
+  return request(`/api/bookings/${encodeURIComponent(bookingId)}/status`, { method: 'GET', signal })
 }
 
 export { ApiError }
