@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "test": "node --test test/payments.test.js test/catering.test.js",
+    "test": "node --test --test-concurrency=1 test/payments.test.js test/catering.test.js test/testitem.test.js",
     "fake-maya": "node test/fake-maya.js"
   },
   "dependencies": {

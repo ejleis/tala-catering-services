@@ -19,6 +19,7 @@ const cateringRouter = require('./routes/catering')
 const mayaRouter = require('./routes/maya')
 const maya = require('./lib/maya')
 const payments = require('./lib/payments')
+const testItem = require('./lib/testItem')
 const { getClientIp } = require('./lib/clientIp')
 
 const app = express()
@@ -85,6 +86,9 @@ if (require.main === module) {
         ? `Maya payments: ENABLED (${maya.environment()})`
         : 'Maya payments: DISABLED (set MAYA_ENVIRONMENT, MAYA_PUBLIC_KEY, MAYA_SECRET_KEY, FRONTEND_URL)',
     )
+    if (testItem.testPesos() !== null) {
+      console.warn(`WARNING: hidden TEST ITEM is ON at PHP ${testItem.testPesos()} — remove ALLOW_TEST_ITEM / TEST_ITEM_PESOS when testing is finished.`)
+    }
     if (process.env.DATABASE_URL) payments.startSweeper()
   })
 }

@@ -6,6 +6,7 @@ const db = require('../lib/db')
 const maya = require('../lib/maya')
 const cateringPayments = require('../lib/cateringPayments')
 const { getClientIp } = require('../lib/clientIp')
+const { testPesos } = require('../lib/testItem')
 
 const router = express.Router()
 
@@ -43,6 +44,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PACKAGES = {
   kasalo: { name: 'Kasalo', rate: 1100, minimumGuests: 50 },
   handaan: { name: 'Handaan', rate: 1400, minimumGuests: 50 },
+}
+
+/** The real packages, plus the hidden test package while ALLOW_TEST_ITEM is on (see lib/testItem.js). */
+function getPackages() {
+  const pesos = testPesos()
+  if (pesos === null) return PACKAGES
+  return { ...PACKAGES, test: { name: 'Test Package (internal)', rate: pesos, minimumGuests: 1 } }
 }
 
 function buildReference() {
@@ -86,7 +94,8 @@ router.post('/', submitLimiter, async (req, res, next) => {
       return res.status(400).json({ message: 'Please correct the highlighted fields.', errors })
     }
 
-    const pkg = Object.hasOwn(PACKAGES, data.packageId) ? PACKAGES[data.packageId] : null
+    const packages = getPackages()
+    const pkg = Object.hasOwn(packages, data.packageId) ? packages[data.packageId] : null
     if (!pkg) {
       return res.status(400).json({ message: 'That package cannot be paid online.', errors: { packageId: 'Unknown package.' } })
     }

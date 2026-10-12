@@ -6,6 +6,7 @@ const db = require('../lib/db');
 const maya = require('../lib/maya');
 const payments = require('../lib/payments');
 const { getClientIp } = require('../lib/clientIp');
+const { testPesos } = require('../lib/testItem');
 
 const router = express.Router();
 
@@ -58,6 +59,19 @@ const CATALOGUE = {
     },
   },
 };
+
+/** The real price list, plus the hidden test room while ALLOW_TEST_ITEM is on (see lib/testItem.js). */
+function getCatalogue() {
+  const pesos = testPesos();
+  if (pesos === null) return CATALOGUE;
+  return {
+    ...CATALOGUE,
+    'test-hotel': {
+      name: 'Test Hotel (internal)',
+      rooms: { 'test-room': { name: 'Test Room (internal)', rate: pesos, maxGuests: 3 } },
+    },
+  };
+}
 
 function buildReference() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -115,11 +129,12 @@ router.post('/', submitLimiter, async (req, res, next) => {
     }
 
     // Verify the hotel and room actually exist, server-side.
-    const hotel = CATALOGUE[data.hotelSlug];
+    const catalogue = getCatalogue();
+    const hotel = Object.hasOwn(catalogue, data.hotelSlug) ? catalogue[data.hotelSlug] : null;
     if (!hotel) {
       return res.status(400).json({ message: 'Unknown hotel.', errors: { hotelSlug: 'Unknown hotel.' } });
     }
-    const room = hotel.rooms[data.roomId];
+    const room = Object.hasOwn(hotel.rooms, data.roomId) ? hotel.rooms[data.roomId] : null;
     if (!room) {
       return res.status(400).json({ message: 'Unknown room.', errors: { roomId: 'Unknown room.' } });
     }

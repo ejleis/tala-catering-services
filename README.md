@@ -247,3 +247,12 @@ rates in `server/routes/catering.js`; keep them identical to `src/data/catering.
 The same webhook (`/api/maya/webhook`) serves both flows. A background check verifies
 unpaid bookings and orders with Maya a few minutes after creation, so a payment is
 confirmed even if the webhook never arrives.
+
+### Hidden test item (live Maya testing without a sandbox)
+
+For a cheap REAL payment test, set both variables on the server (Render):
+`ALLOW_TEST_ITEM=true` and `TEST_ITEM_PESOS=1` (1–100). This adds the hotel
+`test-hotel` / `test-room` and the catering package `test` — never shown on the
+website, priced only from `TEST_ITEM_PESOS`. Order them with a direct request,
+pay, then void the payment in Maya Manager the same day. **Delete both
+variables afterwards.** The API log prints a warning while the test item is on.
