@@ -325,28 +325,28 @@ test('asks before mutating gh api calls and gh repo sync', () => {
   allowed('Bash', sh('gh api repos/o/r/pulls'))
   allowed('Bash', sh('gh api -X GET search/issues -f q=bug'))
   allowed('Bash', sh('gh pr view 5'))
-  allowed('Bash', sh('gh pr create --title "Add gh api -X PUT docs" --body "text"'))
+  asks('Bash', sh('gh pr create --title "Add gh api -X PUT docs" --body "text"')) // strict rule: text that mentions a gh write asks
 })
 
 // ---------------------------------------------------------------- text that merely mentions a push
 
-test('does not treat commit messages or written files as pushes', () => {
+test('text that mentions git push counts as a possible push (strict by design): sub-agents blocked', () => {
   const agent = { agent_id: 'abc123' }
-  allowed('Bash', sh('git commit -m "docs: explain git push origin main"'), ON_FEATURE, agent)
-  allowed('Bash', sh('git commit -am "never run git push by hand"'), ON_FEATURE, agent)
-  allowed('Bash', sh('git commit -m"x" -m "then git push origin main"'), ON_FEATURE, agent)
-  allowed('Bash', sh('git commit --message "git push origin main"'), ON_FEATURE, agent)
-  allowed('Bash', sh('gh pr create --title "t" --body "Run git push origin main later"'), ON_FEATURE, agent)
-  allowed('Bash', sh('echo "git push origin main"'), ON_FEATURE, agent)
-  allowed('PowerShell', sh('Set-Content notes.txt "git push origin main"'), ON_FEATURE, agent)
-  allowed('Bash', sh('grep -n "git push" docs/notes.md'), ON_FEATURE, agent)
-  allowed('PowerShell', sh('Select-String -Path README.md -Pattern "git push"'), ON_FEATURE, agent)
-  allowed('Bash', sh("cat > notes.md <<'EOF'\nRun this:\ngit push origin main\nEOF"), ON_FEATURE, agent)
-  allowed('Bash', sh("cat > notes.md <<EOF\ngit push origin main\nEOF\ngit status"), ON_FEATURE, agent)
-  allowed('Bash', sh("cat > deploy.sh <<'EOF'\n#!/bin/sh\ngit push origin main\nEOF"), ON_FEATURE, agent)
-  allowed('Bash', sh('git commit -m "$(cat <<\'EOF\'\nFix things; do not git push origin main here\n\nIt\'s fine.\nEOF\n)"'), ON_FEATURE, agent)
-  allowed('PowerShell', sh("$msg = @'\nrun git push origin main\n'@\ngit commit -m $msg"), ON_FEATURE, agent)
-  allowed('PowerShell', sh("Set-Content -Path notes.md -Value @'\ngit push origin main\n'@"), ON_FEATURE, agent)
+  blocked('Bash', sh('git commit -m "docs: explain git push origin main"'), ON_FEATURE, agent)
+  blocked('Bash', sh('git commit -am "never run git push by hand"'), ON_FEATURE, agent)
+  blocked('Bash', sh('git commit -m"x" -m "then git push origin main"'), ON_FEATURE, agent)
+  blocked('Bash', sh('git commit --message "git push origin main"'), ON_FEATURE, agent)
+  blocked('Bash', sh('gh pr create --title "t" --body "Run git push origin main later"'), ON_FEATURE, agent)
+  blocked('Bash', sh('echo "git push origin main"'), ON_FEATURE, agent)
+  blocked('PowerShell', sh('Set-Content notes.txt "git push origin main"'), ON_FEATURE, agent)
+  blocked('Bash', sh('grep -n "git push" docs/notes.md'), ON_FEATURE, agent)
+  blocked('PowerShell', sh('Select-String -Path README.md -Pattern "git push"'), ON_FEATURE, agent)
+  blocked('Bash', sh("cat > notes.md <<'EOF'\nRun this:\ngit push origin main\nEOF"), ON_FEATURE, agent)
+  blocked('Bash', sh("cat > notes.md <<EOF\ngit push origin main\nEOF\ngit status"), ON_FEATURE, agent)
+  blocked('Bash', sh("cat > deploy.sh <<'EOF'\n#!/bin/sh\ngit push origin main\nEOF"), ON_FEATURE, agent)
+  blocked('Bash', sh('git commit -m "$(cat <<\'EOF\'\nFix things; do not git push origin main here\n\nIt\'s fine.\nEOF\n)"'), ON_FEATURE, agent)
+  blocked('PowerShell', sh("$msg = @'\nrun git push origin main\n'@\ngit commit -m $msg"), ON_FEATURE, agent)
+  blocked('PowerShell', sh("Set-Content -Path notes.md -Value @'\ngit push origin main\n'@"), ON_FEATURE, agent)
 })
 
 test('still asks for pushes hidden in nested shells and fed scripts', () => {
@@ -366,6 +366,61 @@ test('still asks for pushes hidden in nested shells and fed scripts', () => {
   blocked('Bash', sh('bash -c "git push origin feature/x"'), ON_FEATURE, { agent_id: 'abc123' })
   blocked('Bash', sh("bash <<'EOF'\ngit push origin main\nEOF"), ON_FEATURE, { agent_id: 'abc123' })
   blocked('Bash', sh("cat > n.md <<'EOF'\nhi\nEOF\ngit push"), ON_FEATURE, { agent_id: 'abc123' })
+})
+
+test('message options only exempt nothing now: interpreters with -m still ask', () => {
+  asks('Bash', sh('bash -m "git push origin main"'))
+  asks('Bash', sh('sh --message "git push origin main"'))
+  asks('Bash', sh('python3 -m "git push origin main"'))
+  asks('PowerShell', sh('pwsh -m "git push origin main"'))
+  asks('Bash', sh('bash -cm "git push origin main"'))
+  asks('PowerShell', sh('pwsh -Comm "git push origin main"'))
+  asks('Bash', sh('git commit -m "docs: explain git push origin main"'))
+  asks('Bash', sh('gh pr create --title "x" --body "run git push origin main after review"'))
+  // Commit messages that do not mention a git push are unaffected.
+  allowed('Bash', sh('git commit -m "fix push notification bug"'))
+  allowed('Bash', sh('git commit -m "Harden the guard hook"'))
+})
+
+test('here-documents and here-strings that mention a push ask, expanding or not', () => {
+  asks('Bash', sh('cat > notes.txt <<EOF\n$(git push origin main)\nEOF'))
+  asks('Bash', sh('cat > notes.txt <<EOF\n`git push origin main`\nEOF'))
+  asks('PowerShell', sh('$s = @"\n$(git push origin main)\n"@'))
+  asks('Bash', sh("cat > notes.txt <<'EOF'\n$(git push origin main)\nEOF"))
+  asks('PowerShell', sh("$s = @'\n$(git push origin main)\n'@"))
+  asks('Bash', sh("cat <<'X' | /bin/bash\ngit push origin main\nX"))
+  asks('Bash', sh("cat > p.sh <<'X'\ngit push origin main\nX\nsh p.sh"))
+  asks('PowerShell', sh("$s=@'\ngit push origin main\n'@; & ([scriptblock]::Create($s))"))
+  asks('PowerShell', sh("@'\ngit push origin main\n'@ | pwsh.exe -Command -"))
+  blocked('Bash', sh('cat > n.txt <<EOF\n$(git push origin feature/x)\nEOF'), ON_FEATURE, { agent_id: 'abc123' })
+})
+
+test('push text handed to any interpreter or script asks', () => {
+  asks('Bash', sh('echo "git push origin main" | xargs -I{} sh -c {}'))
+  asks('Bash', sh('echo "git push origin main" | perl'))
+  asks('Bash', sh('echo "git push origin main" | ruby'))
+  asks('Bash', sh('echo "git push origin main" | ssh host'))
+  asks('Bash', sh('echo "git push origin main" | bash.exe'))
+  asks('Bash', sh('echo "git push origin main" > d.sh && ./d.sh'))
+  asks('Bash', sh('echo "git push origin main" > d.sh; . d.sh'))
+  asks('PowerShell', sh('Set-Content d.ps1 "git push origin main"; .\d.ps1'))
+  asks('PowerShell', sh("echo 'git push origin main' | % { iex $_ }"))
+  asks('PowerShell', sh("Write-Output 'git push origin main' | ForEach-Object { Invoke-Expression $_ }"))
+  asks('Bash', sh('echo "remember: git push needs approval" && npm run build'))
+})
+
+test('grep -e/-f with attached or separate values cannot read env files', () => {
+  blocked('PowerShell', sh('sls -PSPath .e* -Pattern .'))
+  blocked('PowerShell', sh('Select-String -LP .e* -Pattern .'))
+  blocked('Bash', sh('grep -e. .e*'))
+  blocked('Bash', sh('grep -ex .e*'))
+  blocked('Bash', sh('grep -rne KEY .e*'))
+  blocked('Bash', sh('grep -f .e* somefile'))
+  blocked('Bash', sh('grep -f.e* somefile'))
+  blocked('Bash', sh('grep --file=.e* somefile'))
+  allowed('Bash', sh('grep -e TAX_RATE server/routes/bookings.js'))
+  allowed('Bash', sh("grep -ne '^[A-Z_]+=' .env.example"))
+  allowed('Bash', sh('grep -f patterns.txt server/routes/bookings.js'))
 })
 
 test('fails closed on unparseable or unexpected input', () => {

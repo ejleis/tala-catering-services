@@ -214,7 +214,9 @@ function pushTargetsMain(args, dir, stateChanged) {
 const GIT_PUSH_RE = /\bgit(?:\.exe)?\b[\s\S]*\b(?:push|send-pack)\b/i
 const GH_MUTATE_RE = /\bgh(?:\.exe)?\s+(?:api\b[\s\S]*?(?:\s-X|\s--method|\s-[fF]|\s--field|\s--raw-field|\s--input)|repo\s+sync\b)/i
 const SHELL_WORD = /(?:^|[\s|;&(])(?:bash|sh|zsh|dash|ksh|fish|cmd|powershell|pwsh|iex|invoke-expression|python3?|node|ruby|perl|php|eval|source|xargs|ssh|wsl)(?=\s|$)/i
-const INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'powershell', 'pwsh', 'iex', 'invoke-expression', 'python', 'python3', 'node', 'source', 'eval', 'wsl'])
+const INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'powershell', 'pwsh', 'iex', 'invoke-expression', 'python', 'python3', 'node', 'source', 'eval', 'wsl', 'xargs', 'perl', 'ruby', 'php', 'ssh', '.', 'start-process', 'invoke-command'])
+// A segment that runs a script file, e.g. ./deploy.sh, .\run.ps1, C:\x\y.bat
+const RUNS_SCRIPT = /^(?:\.{1,2}[\\/]|[a-z]:[\\/]|\/)|\.(?:sh|bash|ps1|psm1|py|rb|pl|php|bat|cmd)$/i
 // Commands whose quoted arguments are plain text (printed, written or searched), not run.
 const TEXT_COMMANDS = new Set(['echo', 'printf', 'write-output', 'write-host', 'write-error', 'set-content', 'add-content', 'out-file', 'tee', 'cat', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'select-string', 'sls', 'findstr'])
 const MESSAGE_OPTION = /^(?:-[a-zA-Z]*m|--message|--body|--title|--notes|--description)$/
@@ -241,7 +243,7 @@ function maskHeredocs(command) {
       const intro = command.slice(lineStart, i)
       i += 1
       if (pending.length && (ctx === 'top' || ctx === 'sub')) {
-        for (const delim of pending) {
+        for (const { delim, expands } of pending) {
           let body = ''
           while (i < n) {
             let end = command.indexOf('\n', i)
@@ -251,7 +253,7 @@ function maskHeredocs(command) {
             if (line.trim() === delim) break
             body += line + '\n'
           }
-          bodies.push({ text: body, intro, whole: false })
+          bodies.push({ text: body, intro, whole: false, expands })
         }
         pending = []
       }
@@ -279,7 +281,8 @@ function maskHeredocs(command) {
     if (ch === '@' && (command[i + 1] === "'" || command[i + 1] === '"') && /^\r?\n/.test(command.slice(i + 2, i + 4))) {
       const q = command[i + 1]
       const endAt = command.indexOf(`\n${q}@`, i + 2)
-      bodies.push({ text: command.slice(i + 2, endAt < 0 ? n : endAt), intro: command.slice(lineStart, i), whole: true })
+      // @" ... "@ expands $( ) like an unquoted heredoc; @' ... '@ is literal.
+      bodies.push({ text: command.slice(i + 2, endAt < 0 ? n : endAt), intro: command.slice(lineStart, i), whole: true, expands: q === '"' })
       out += `${q}${q}`
       if (endAt < 0) { i = n } else { i = endAt + 3; lineStart = endAt + 1 }
       continue
@@ -288,7 +291,8 @@ function maskHeredocs(command) {
       if (command[i + 2] === '<') { out += '<<<'; i += 3; continue } // here-string, not a heredoc
       const m = /^<<-?[ \t]*(?:'([^'\r\n]+)'|"([^"\r\n]+)"|\\?([A-Za-z0-9_.\-]+))/.exec(command.slice(i))
       if (m) {
-        pending.push(m[1] || m[2] || m[3])
+        // Only an unquoted delimiter (<<EOF) expands $( ) and backticks inside the body.
+        pending.push({ delim: m[1] || m[2] || m[3], expands: !!m[3] })
         out += m[0]
         i += m[0].length
         continue
@@ -322,13 +326,27 @@ function aliasPushes(sub, args, dir, defs, depth = 0) {
   return false
 }
 
+/**
+ * Deliberately disabled (1 Nov 2026 review): trying to recognise quoted text that only
+ * MENTIONS a push (commit messages, echo, heredocs) opened several bypasses (bash -cm "…",
+ * echo … | bash.exe, scripts written then run). Any quoted text containing `git … push` is
+ * therefore treated as a possible push: the main session is asked, sub-agents are blocked.
+ * The cost is an occasional extra prompt for a commit message that mentions a push.
+ */
+const TEXT_EXEMPTION_ENABLED = false
+
 /** True when the quoted token is plain text (a commit message, echoed or searched text), not a nested command. */
 function isTextToken(tokens, index) {
+  if (!TEXT_EXEMPTION_ENABLED) return false
   const token = tokens[index]
   const head = commandName(tokens[0])
   const prev = index > 0 ? tokens[index - 1].value : ''
+  // Message options only count for git and gh: `bash -m "git push ..."` is not a commit message.
+  const gitOrGh = /^(git|gh)(\.exe)?$/.test(head)
   const isMessage =
-    MESSAGE_OPTION.test(prev) || MESSAGE_ATTACHED.test(token.raw) || (head === 'gh' && /^-[bt]$/.test(prev)) || TEXT_COMMANDS.has(head)
+    (gitOrGh && (MESSAGE_OPTION.test(prev) || MESSAGE_ATTACHED.test(token.raw))) ||
+    (head === 'gh' && /^-[bt]$/.test(prev)) ||
+    TEXT_COMMANDS.has(head)
   if (!isMessage) return false
   // Double quotes can still run $( ) or `...`; heredoc bodies were already removed from the text.
   if (token.raw.includes('"') && /\$\(|`/.test(token.raw)) return false
@@ -365,10 +383,16 @@ function analysePushes(rawCommand, cwd) {
 
   // Heredoc / here-string bodies only count when something feeds them to a shell.
   for (const body of bodies) {
-    const fed = body.whole ? SHELL_WORD.test(command) : SHELL_WORD.test(body.intro)
-    if (!fed) continue
-    if (GIT_PUSH_RE.test(body.text)) return { found: true, reason: 'a script fed to a shell runs git push, which cannot be checked', gh }
-    if (GH_MUTATE_RE.test(body.text)) gh = 'a script fed to a shell changes the repository through gh'
+    // An expanding body runs its $( ) and backticks while the text is being written,
+    // even when nothing feeds it to a shell (cat > file <<EOF ... $(git push) ... EOF).
+    if (body.expands && /\$\(|`/.test(body.text)) {
+      if (GIT_PUSH_RE.test(body.text)) return { found: true, reason: 'a here-document runs git push through $( ) or backticks', gh }
+      if (GH_MUTATE_RE.test(body.text)) gh = 'a here-document changes the repository through gh in $( ) or backticks'
+    }
+    // Any here-document or here-string that contains a push counts, whether or not we can see
+    // it being fed to a shell (it may be written to a script and run, or piped to bash.exe).
+    if (GIT_PUSH_RE.test(body.text)) return { found: true, reason: 'a here-document contains git push, which cannot be checked', gh }
+    if (GH_MUTATE_RE.test(body.text)) gh = 'a here-document changes the repository through gh'
   }
 
   for (const segment of splitSegments(command)) {
@@ -376,8 +400,10 @@ function analysePushes(rawCommand, cwd) {
     if (!tokens.length) continue
     const head = commandName(tokens[0])
     if (DIR_CHANGERS.has(head)) stateChanged = true
-    if (exemptedPushText && INTERPRETERS.has(head)) {
-      return { found: true, reason: 'text containing git push is piped into a shell', gh }
+    // Push text that was echoed or written earlier in this command, then run: piped into an
+    // interpreter, or written to a script that a later segment executes.
+    if (exemptedPushText && (INTERPRETERS.has(head) || RUNS_SCRIPT.test(tokens[0].value) || tokens.some((t) => RUNS_SCRIPT.test(t.value) && INTERPRETERS.has(head)))) {
+      return { found: true, reason: 'text containing git push is run as a script', gh }
     }
 
     // bash -c "git push ...", powershell -Command "git push ...", and similar.
@@ -457,7 +483,8 @@ function selectStringPaths(args) {
       if (name.length >= 4 && 'pattern'.startsWith(name)) {
         patternGiven = true
         if (attached === undefined) k += 1
-      } else if (name === 'path' || (name.length >= 3 && 'literalpath'.startsWith(name))) {
+      } else if (name.includes('path') || name === 'lp' || (name.length >= 3 && 'literalpath'.startsWith(name))) {
+        // -Path, -LiteralPath and their aliases (-PSPath, -LP, ...): the value is read.
         const value = attached !== undefined ? attached : args[++k]
         if (value !== undefined) out.push(...value.split(','))
       } else if (SLS_VALUE_OPTS.has(name) && attached === undefined) {
@@ -483,15 +510,33 @@ function grepStylePaths(name, args) {
       const eq = a.indexOf('=')
       const key = eq < 0 ? a : a.slice(0, eq)
       const attached = eq < 0 ? undefined : a.slice(eq + 1)
-      if (key === '--regexp' || key === '--file') { patternGiven = true; if (attached === undefined) k += 1 }
+      if (key === '--regexp') { patternGiven = true; if (attached === undefined) k += 1 }
+      else if (key === '--file') {
+        // --file reads patterns FROM a file: that file is read, so check it like a path.
+        patternGiven = true
+        const v = attached !== undefined ? attached : args[++k]
+        if (v !== undefined) out.push(v)
+      }
       else if (key === '--glob' || key === '--iglob') { const v = attached !== undefined ? attached : args[++k]; if (v !== undefined) out.push(v) }
       else if (GREP_VALUE_OPTS.has(key) && attached === undefined) k += 1
       continue
     }
     if (!literal && a.length > 1 && a.startsWith('-') && !/^-\d+$/.test(a)) {
+      // In a short-option group, -e/-f take a value: either the rest of the group
+      // (grep -e. / -ex / -fFILE) or the next argument (grep -rne PATTERN).
+      const letters = a.slice(1)
+      const ef = letters.search(/[ef]/)
+      if (ef >= 0 && /^[a-zA-Z0-9]*$/.test(letters.slice(0, ef))) {
+        const flag = letters[ef]
+        const rest = letters.slice(ef + 1)
+        patternGiven = true
+        if (flag === 'e') { if (!rest) k += 1 }
+        else if (rest) out.push(rest) // -fFILE: FILE is read
+        else { if (args[k + 1] !== undefined) out.push(args[k + 1]); k += 1 }
+        continue
+      }
       const last = /^-[a-zA-Z0-9]*([a-zA-Z])$/.exec(a)?.[1]
-      if (last === 'e' || last === 'f') { patternGiven = true; k += 1 }
-      else if (last === 'g' && name === 'rg') { if (args[k + 1] !== undefined) out.push(args[k + 1]); k += 1 }
+      if (last === 'g' && name === 'rg') { if (args[k + 1] !== undefined) out.push(args[k + 1]); k += 1 }
       else if (last && /^[mABCtTjMdD]$/.test(last) && a.length === 2) k += 1
       continue
     }
