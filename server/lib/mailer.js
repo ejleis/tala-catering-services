@@ -194,13 +194,22 @@ async function sendCateringConfirmedToOwner(o) {
 }
 
 async function sendCateringConfirmationToCustomer(o) {
+  const deposit = o.payment_type === 'DEPOSIT'
+  // [NEEDS PROOF] Down-payment wording must be approved by the client. It deliberately
+  // does not say "confirmed": only part of the order has been paid.
+  const subject = deposit
+    ? `Down payment received ${safeHeader(o.reference)} — Tala's Event Catering Services`
+    : `Order confirmed ${safeHeader(o.reference)} — Tala's Event Catering Services`
+  const opening = deposit
+    ? '<p>Thank you — we have received your down payment for your catering order.</p>'
+    : '<p>Thank you — we have received your payment and your catering order is confirmed.</p>'
   const { error } = await resend.emails.send({
     from: process.env.MAIL_FROM,
     to: safeHeader(o.customer_email),
-    subject: `Order confirmed ${safeHeader(o.reference)} — Tala's Event Catering Services`,
+    subject,
     html: `
       <p>Hi ${escapeHtml(o.customer_name)},</p>
-      <p>Thank you — we have received your payment and your catering order is confirmed.</p>
+      ${opening}
       <table style="font-family:Arial,sans-serif;font-size:14px;border-collapse:collapse">
         ${cateringRows(o)}
       </table>

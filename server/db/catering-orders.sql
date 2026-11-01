@@ -62,6 +62,11 @@ begin
     alter table catering_orders add constraint catering_amount_due_valid
       check (amount_due_centavos > 0 and amount_due_centavos <= total_centavos);
   end if;
+  -- FULL means the whole total is due; DEPOSIT means less than the total. Catches code bugs.
+  if not exists (select 1 from pg_constraint where conname = 'catering_payment_type_matches_amount') then
+    alter table catering_orders add constraint catering_payment_type_matches_amount
+      check ((payment_type = 'FULL') = (amount_due_centavos = total_centavos));
+  end if;
 end $$;
 
 -- Inserts that do not name amount_due_centavos (older API code during a deploy) default

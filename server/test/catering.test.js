@@ -307,6 +307,19 @@ test('delayed webhook: the sweep still confirms a deposit paid at the exact amou
   assert.equal((await order(body.orderId)).status, 'CONFIRMED')
 })
 
+test('database rejects a payment type that does not match the amount due', async () => {
+  const { body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '5000' }))
+  await assert.rejects(
+    db.query(`update catering_orders set payment_type = 'FULL' where id = $1`, [body.orderId]),
+    /catering_payment_type_matches_amount/,
+  )
+  const { body: full } = await create(kasalo())
+  await assert.rejects(
+    db.query(`update catering_orders set amount_due_centavos = 100 where id = $1`, [full.orderId]),
+    /catering_payment_type_matches_amount/,
+  )
+})
+
 test('status endpoint reports paymentType, amountPaidCentavos and balanceCentavos without personal data', async () => {
   const { body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '5000.50' }))
   let status = await (await get(`/api/catering-orders/${body.orderId}/status`)).json()

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { submitCateringOrder } from '../lib/api.js'
 import { isMayaCheckoutUrl } from '../lib/maya.js'
@@ -33,6 +33,11 @@ export default function CheckoutPage() {
   const { state } = useLocation()
   const [values, setValues] = useState(INITIAL)
   const [checkoutUrl, setCheckoutUrl] = useState(null)
+  const [amountMismatch, setAmountMismatch] = useState(false)
+  // The amount (centavos) the customer chose at submit time. Before redirecting we
+  // check the server is charging exactly this, so a customer who chose a down payment
+  // is never sent to pay the full total (e.g. if an older API ignored the choice).
+  const expectedCentavos = useRef(null)
 
   const pkg = PACKAGES.find((item) => item.id === state?.packageId && item.pricePerGuest != null)
   const guests = Number(state?.guests)
@@ -54,8 +59,9 @@ export default function CheckoutPage() {
       ...validateCheckout(formValues),
       ...validatePaymentAmount(formValues.paymentOption, formValues.amountPesos, total),
     }),
-    submit: ({ paymentOption, amountPesos, ...formValues }, options) =>
-      submitCateringOrder(
+    submit: ({ paymentOption, amountPesos, ...formValues }, options) => {
+      expectedCentavos.current = paymentOption === 'custom' ? pesosToCentavos(amountPesos.trim()) : total * 100
+      return submitCateringOrder(
         {
           ...formValues,
           packageId: pkg?.id,
@@ -65,8 +71,13 @@ export default function CheckoutPage() {
           ...(paymentOption === 'custom' ? { amountPesos: amountPesos.trim() } : {}),
         },
         options,
-      ),
+      )
+    },
     onSuccess: (result) => {
+      if (result?.amountDueCentavos !== expectedCentavos.current) {
+        setAmountMismatch(true)
+        return
+      }
       if (result?.checkoutUrl && isMayaCheckoutUrl(result.checkoutUrl)) {
         setCheckoutUrl(result.checkoutUrl)
         window.location.assign(result.checkoutUrl)
@@ -108,6 +119,22 @@ export default function CheckoutPage() {
   }
 
   const busy = status === 'submitting'
+
+  if (status === 'success' && amountMismatch) {
+    return (
+      <Container className="py-24">
+        <div className="mx-auto max-w-lg rounded-panel border border-ink-200 bg-white p-8 text-center">
+          <h1 className="mb-2 font-display text-2xl font-semibold">We could not prepare your payment</h1>
+          <p className="mx-auto mb-6 max-w-md text-sm text-ink-500">
+            The payment could not be set up for the amount you selected, so you have not been sent
+            to Maya and nothing has been charged. Please try again in a few minutes, or contact us
+            and we will be glad to assist.
+          </p>
+          <Button to="/#packages">Back to packages</Button>
+        </div>
+      </Container>
+    )
+  }
 
   if (status === 'success') {
     return (

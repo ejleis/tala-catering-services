@@ -94,16 +94,24 @@ export default function PaymentResultPage() {
   }
 
   switch (booking.status) {
-    case 'CONFIRMED':
+    case 'CONFIRMED': {
+      // [NEEDS PROOF] Down-payment wording must be approved by the client.
+      const deposit = catering && booking.paymentType === 'DEPOSIT'
       return (
-        <Shell icon="check" title={catering ? 'Order confirmed' : 'Booking confirmed'}>
+        <Shell
+          icon="check"
+          title={deposit ? 'Down payment received' : catering ? 'Order confirmed' : 'Booking confirmed'}
+        >
           <p className="mb-4">
-            Thank you — your payment has been received. A confirmation has been emailed to you.
+            {deposit
+              ? "Thank you — your down payment has been received. A confirmation has been emailed to you. The balance is settled directly with Tala's Event Catering Services."
+              : 'Thank you — your payment has been received. A confirmation has been emailed to you.'}
           </p>
           <Details booking={booking} catering={catering} />
           <Actions catering={catering} />
         </Shell>
       )
+    }
     case 'PENDING_PAYMENT':
     case 'PAYMENT_PROCESSING':
       return polls >= MAX_POLLS ? (
@@ -131,7 +139,7 @@ export default function PaymentResultPage() {
           <p className="mb-4">
             {booking.status === 'CANCELLED'
               ? 'The payment was cancelled and you have not been charged.'
-              : 'Your payment was not completed, so this {noun} was not made. You have not been charged for it.'}
+              : `Your payment was not completed, so this ${catering ? 'order' : 'booking'} was not made. You have not been charged for it.`}
           </p>
           <Details booking={booking} catering={catering} />
           <Actions retry catering={catering} />
@@ -175,7 +183,7 @@ function Details({ booking, catering }) {
           <Row label="Check-out" value={formatDate(booking.checkOut)} />
         </>
       )}
-      {catering && booking.amountPaidCentavos != null ? (
+      {catering && booking.status === 'CONFIRMED' && booking.amountPaidCentavos != null ? (
         <>
           <Row label="Order total" value={peso(booking.totalCentavos)} />
           <Row label="Amount paid" value={peso(booking.amountPaidCentavos)} />

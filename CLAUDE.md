@@ -64,7 +64,7 @@ Render's free tier has cold starts.
 
 ## 6. Environment variables (names only; values live on Render/Vercel)
 
-Server (Render): `DATABASE_URL`, `DATABASE_CA_CERT` (optional), `MAYA_ENVIRONMENT=production`, `MAYA_PUBLIC_KEY`, `MAYA_SECRET_KEY`, `FRONTEND_URL=https://www.tala-ecs.com`, `CLIENT_IP_HEADER=true-client-ip`, `MAYA_WEBHOOK_IPS` (optional override), `TAX_RATE`, `CATERING_MIN_PAYMENT_PESOS` (optional, default 1), `CORS_ORIGIN`, `RESEND_API_KEY`, `MAIL_FROM`, `OWNER_EMAIL`, `PORT`.
+Server (Render): `DATABASE_URL`, `DATABASE_CA_CERT` (optional), `MAYA_ENVIRONMENT=production`, `MAYA_PUBLIC_KEY`, `MAYA_SECRET_KEY`, `FRONTEND_URL=https://www.tala-ecs.com`, `CLIENT_IP_HEADER=true-client-ip`, `MAYA_WEBHOOK_IPS` (optional override), `TAX_RATE`, `CATERING_MIN_PAYMENT_PESOS` (optional, default 1; if changed, also change `MIN_ONLINE_PAYMENT_PESOS` in `src/data/catering.js`, which the checkout hint displays), `CORS_ORIGIN`, `RESEND_API_KEY`, `MAIL_FROM`, `OWNER_EMAIL`, `PORT`.
 
 Frontend (Vercel): `VITE_API_BASE_URL` where the API is on another host.
 
