@@ -4,7 +4,7 @@ import { submitCateringOrder } from '../lib/api.js'
 import { isMayaCheckoutUrl } from '../lib/maya.js'
 import { useSubmitForm } from '../hooks/useSubmitForm.js'
 import { LockIcon } from '../components/ui/Icons.jsx'
-import { PACKAGES, MIN_ONLINE_PAYMENT_PESOS } from '../data/catering.js'
+import { PACKAGES } from '../data/catering.js'
 import { formatPeso, formatPesoExact, todayISO } from '../lib/format.js'
 import { LIMITS, pesosToCentavos, validateCheckout, validatePaymentAmount } from '../lib/validation.js'
 import { Container } from '../components/ui/Section.jsx'
@@ -262,7 +262,7 @@ export default function CheckoutPage() {
                 label="Amount to pay now"
                 required
                 error={errors.amountPesos}
-                hint={`Minimum ${formatPesoExact(MIN_ONLINE_PAYMENT_PESOS)} · Maximum ${formatPesoExact(total)}`}
+                hint={`Maximum ${formatPesoExact(total)}`}
                 className="mt-4"
               >
                 {(props) => (
