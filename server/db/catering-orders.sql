@@ -92,6 +92,7 @@ create trigger catering_orders_default_amount_due before insert on catering_orde
 alter table catering_orders add column if not exists mismatch_alerted_at timestamptz;
 alter table catering_orders add column if not exists owner_email_claimed_at timestamptz;
 alter table catering_orders add column if not exists customer_email_claimed_at timestamptz;
+alter table catering_orders add column if not exists mismatch_alert_sent_at timestamptz;
 
 -- Same lock-down as the other tables: RLS on, no policies, no public API access.
 alter table catering_orders enable row level security;

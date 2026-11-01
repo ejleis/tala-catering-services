@@ -135,6 +135,10 @@ create index if not exists webhook_events_payment_idx on webhook_events (maya_pa
 alter table bookings add column if not exists mismatch_alerted_at timestamptz;
 alter table bookings add column if not exists owner_email_claimed_at timestamptz;
 alter table bookings add column if not exists guest_email_claimed_at timestamptz;
+-- mismatch_alert_sent_at: set once the mismatch alert was actually delivered. A claim
+--   (mismatch_alerted_at) older than 10 minutes without it is treated as a crashed send
+--   and is re-sent by the sweep.
+alter table bookings add column if not exists mismatch_alert_sent_at timestamptz;
 
 -- ---------- Lock the tables from Supabase's public API ----------
 -- RLS on, no policies => anon/authenticated keys can read or write nothing.

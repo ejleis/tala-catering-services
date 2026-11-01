@@ -57,7 +57,7 @@ Render's free tier has cold starts.
   - Catering: `POST /api/catering-orders` → Maya checkout URL → `GET /api/catering-orders/:id/status`.
   - Return URLs are `/payment/success|failure|cancel?b=<uuid>`, with `&k=catering` for catering orders. The result page is display-only.
 - **Webhook:** `POST /api/maya/webhook`, one URL for both flows. Maya's webhooks are unsigned, so the route checks Maya's published IPs (production 18.138.50.235, 3.1.207.200) through the `True-Client-IP` header (`CLIENT_IP_HEADER`), replies 200, stores a `webhook_events` row, then reconciles. The route routes a reference to a catering order if one exists, otherwise to a hotel booking.
-- **Background sweep (every 5 minutes):** unpaid bookings and orders are re-checked with Maya 3 minutes after creation; unpaid ones expire after the 60-minute checkout window plus 10 minutes; failed confirmation emails are retried (up to 5 times). The webhook is proven to work (section 9); the sweep stays as the safety net for any delivery Maya misses.
+- **Background sweep (every 5 minutes):** unpaid bookings and orders are re-checked with Maya 3 minutes after creation; unpaid ones expire after the 60-minute checkout window plus 10 minutes; failed confirmation emails are retried (up to 5 times); `PAYMENT_FAILED`/`CANCELLED` records still inside the checkout window are re-checked (a customer may pay on a second try); amount-mismatch owner alerts are sent once, and a claim left unsent for 10 minutes (crash, email outage) is retried even after the record expired. Dates ("today") are Manila dates on both server and front end. The webhook is proven to work (section 9); the sweep stays as the safety net for any delivery Maya misses.
 - **Safety switch:** `POST /api/bookings` and `/api/catering-orders` return 503 unless `MAYA_ENVIRONMENT` (exactly `sandbox` or `production`), `MAYA_PUBLIC_KEY`, `MAYA_SECRET_KEY`, `FRONTEND_URL` and `DATABASE_URL` are all set. Clearing `MAYA_ENVIRONMENT` on Render is the kill switch.
 - **Database:** `server/db/schema.sql` (bookings, payments, webhook_events) and `server/db/catering-orders.sql` (catering_orders). Row-level security is on with no policies; the API connects with the postgres role. One booking can have only one PAID payment (partial unique index).
 - **Emails:** owner and customer confirmation emails are sent only after verified payment. Owner alerts are sent for amount mismatches and late payments.
@@ -72,7 +72,7 @@ Frontend (Vercel): `VITE_API_BASE_URL` where the API is on another host.
 
 ## 7. Testing
 
-- **Server tests:** `cd server && TEST_DATABASE_URL=postgresql://... npm test` (Node `node:test`, 34 tests, run serially). They use a fake Maya server and a real Postgres with both SQL files applied. They prove our logic, not Maya's real responses.
+- **Server tests:** `cd server && TEST_DATABASE_URL=postgresql://... npm test` (Node `node:test`, 70 tests, run serially; `unit.test.js` needs no database). They use a fake Maya server and a real Postgres with both SQL files applied. They prove our logic, not Maya's real responses.
 - **Local fake Maya:** `npm run fake-maya` in `server/`, with `ALLOW_FAKE_MAYA=true` and `MAYA_API_BASE=http://localhost:4000` in `server/.env`.
 - **Frontend:** `npm run build`; `npm run check:rooms`.
 - **Pitfall for Claude's own shell:** `pkill -f <pattern>` can match and kill the shell running it. Kill by PID instead.

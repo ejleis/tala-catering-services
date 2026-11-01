@@ -8,6 +8,7 @@
  */
 
 import { MIN_ONLINE_PAYMENT_PESOS } from '../data/catering.js'
+import { todayISO } from './format.js'
 
 export const LIMITS = {
   name: 100,
@@ -46,13 +47,12 @@ export function isValidPhone(value) {
   )
 }
 
+/** True for a real YYYY-MM-DD date that is today or later in Manila (same rule as the server). */
 export function isFutureDate(value) {
-  if (!value) return false
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return false
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return date >= today
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return false // e.g. 2027-02-30
+  return value >= todayISO()
 }
 
 /** Validates the catering inquiry form. Returns a field -> message map. */

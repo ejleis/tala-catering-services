@@ -64,17 +64,50 @@ const MISMATCH_TABLES = new Set(['bookings', 'catering_orders'])
  */
 async function claimMismatchAlert(table, id) {
   if (!MISMATCH_TABLES.has(table)) throw new Error('invalid table')
+  // Same stale-claim pattern as the confirmation emails: a claim older than 10
+  // minutes whose alert was never marked sent means the sender crashed, so it
+  // may be claimed again. mismatch_alert_sent_at is the permanent "done" mark.
   const { rows } = await db.query(
-    `update ${table} set mismatch_alerted_at = now() where id = $1 and mismatch_alerted_at is null returning id`,
+    `update ${table} set mismatch_alerted_at = now()
+      where id = $1 and mismatch_alert_sent_at is null
+        and (mismatch_alerted_at is null or mismatch_alerted_at < now() - interval '10 minutes')
+      returning id`,
     [id],
   )
   return rows.length > 0
 }
 
+/** Marks the alert as delivered so it is never sent again. */
+async function markMismatchAlertSent(table, id) {
+  if (!MISMATCH_TABLES.has(table)) throw new Error('invalid table')
+  try {
+    await db.query(`update ${table} set mismatch_alert_sent_at = now() where id = $1`, [id])
+  } catch (error) {
+    console.error('[payments] could not mark mismatch alert as sent:', error.message)
+  }
+}
+
 /** Gives the claim back if the alert email could not be sent, so a later reconcile retries it. */
 async function releaseMismatchAlert(table, id) {
   if (!MISMATCH_TABLES.has(table)) throw new Error('invalid table')
-  await db.query(`update ${table} set mismatch_alerted_at = null where id = $1`, [id]).catch(() => {})
+  try {
+    await db.query(`update ${table} set mismatch_alerted_at = null where id = $1`, [id])
+  } catch (error) {
+    // The claim stays set; the sweep re-sends it once it is 10 minutes old.
+    console.error('[payments] could not release mismatch alert claim:', error.message)
+  }
+}
+
+/** True when a paid Maya entry matches the expected amount and currency exactly. */
+function paymentMatches(payment, expectedCentavos) {
+  const currency = pickCurrency(payment)
+  return pickCentavos(payment) === expectedCentavos && (!currency || currency === 'PHP')
+}
+
+/** Prefers a paid entry whose amount matches; falls back to the first paid one (-> mismatch alert). */
+function pickPaid(mine, expectedCentavos) {
+  const paidList = mine.filter((p) => PAID_STATUSES.has(pickStatus(p)) && p.isPaid !== false)
+  return paidList.find((p) => paymentMatches(p, expectedCentavos)) ?? paidList[0]
 }
 
 async function getBooking(id) {
@@ -114,12 +147,12 @@ async function reconcile(bookingId) {
   }
 
   const mine = payments.filter((p) => !p?.requestReferenceNumber || p.requestReferenceNumber === bookingId)
-  const paid = mine.find((p) => PAID_STATUSES.has(pickStatus(p)) && p.isPaid !== false)
+  const paid = pickPaid(mine, booking.total_centavos)
 
   if (paid) {
     const centavos = pickCentavos(paid)
     const currency = pickCurrency(paid)
-    if (centavos !== booking.total_centavos || (currency && currency !== 'PHP')) {
+    if (!paymentMatches(paid, booking.total_centavos)) {
       await recordAudit(bookingId, paid, false)
       if (await claimMismatchAlert('bookings', bookingId)) {
         const sent = await alertOwner(`Payment mismatch — booking ${booking.reference}`, [
@@ -128,7 +161,8 @@ async function reconcile(bookingId) {
           `Expected: PHP ${(booking.total_centavos / 100).toFixed(2)} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
           `Please check this payment in Maya Manager before doing anything else.`,
         ])
-        if (!sent) await releaseMismatchAlert('bookings', bookingId)
+        if (sent) await markMismatchAlertSent('bookings', bookingId)
+        else await releaseMismatchAlert('bookings', bookingId)
       }
       return booking
     }
@@ -265,12 +299,24 @@ async function sweep() {
   // tab is confirmed without waiting for the hour-long expiry below.
   const recent = await db.query(
     `select id from bookings
-      where status in ('PENDING_PAYMENT', 'PAYMENT_PROCESSING')
+      where status in ('PENDING_PAYMENT', 'PAYMENT_PROCESSING', 'PAYMENT_FAILED', 'CANCELLED')
         and created_at < now() - interval '3 minutes'
         and expires_at >= now() - interval '10 minutes'
       order by created_at limit 20`,
   )
   for (const { id } of recent.rows) await reconcile(id)
+
+  // Mismatch alerts whose sender crashed (claimed, never marked sent), whatever the
+  // record's status, so an EXPIRED record still gets its alert. reconcile() never
+  // resurrects a terminal record, and a correct late payment confirms as usual.
+  const unsent = await db.query(
+    `select id from bookings
+      where status <> 'CONFIRMED'
+        and mismatch_alert_sent_at is null
+        and mismatch_alerted_at < now() - interval '10 minutes'
+      order by mismatch_alerted_at limit 20`,
+  )
+  for (const { id } of unsent.rows) await reconcile(id)
 
   const stale = await db.query(
     `select id from bookings
@@ -314,5 +360,5 @@ function startSweeper() {
 module.exports = {
   reconcile, dispatchEmails, sweep, startSweeper, getBooking,
   // shared with lib/cateringPayments.js so both flows apply identical checks
-  helpers: { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner, claimMismatchAlert, releaseMismatchAlert },
+  helpers: { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner, claimMismatchAlert, releaseMismatchAlert, markMismatchAlertSent, paymentMatches, pickPaid },
 }

@@ -258,3 +258,135 @@ test('a verified payment arriving after EXPIRED still confirms (hotel and cateri
   assert.equal(sent.cateringOwner, 1)
   assert.equal(sent.alerts.filter((s) => s.startsWith('Late payment')).length, 2)
 })
+
+// ---- L-1: lost mismatch alerts ---------------------------------------------------
+const WRONG = { amount: { value: '100.00' }, currency: 'PHP' }
+const mismatchAlerts = () => sent.alerts.filter((s) => s.startsWith('Payment mismatch')).length
+
+for (const status of ['PENDING_PAYMENT', 'EXPIRED']) {
+  test(`hotel: a stale unsent mismatch claim is re-sent by the sweep (${status}), once, and the record is not resurrected`, async () => {
+    const id = await createBooking()
+    fake.payments[id] = reply(id, 'PAYMENT_SUCCESS', WRONG)
+    await db.query(
+      `update bookings set status = $2, mismatch_alerted_at = now() - interval '11 minutes',
+         expires_at = now() - interval '1 day' where id = $1`, [id, status])
+    await payments.sweep()
+    assert.equal(mismatchAlerts(), 1)
+    const booking = await row('bookings', id)
+    assert.notEqual(booking.mismatch_alert_sent_at, null)
+    assert.notEqual(booking.status, 'CONFIRMED')
+    if (status === 'EXPIRED') assert.equal(booking.status, 'EXPIRED')
+    await payments.sweep() // sent -> never again
+    assert.equal(mismatchAlerts(), 1)
+  })
+}
+
+test('hotel: a fresh claim (1 minute) is not re-sent; a sent alert is never re-sent', async () => {
+  const id = await createBooking()
+  fake.payments[id] = reply(id, 'PAYMENT_SUCCESS', WRONG)
+  await db.query(`update bookings set mismatch_alerted_at = now() - interval '1 minute' where id = $1`, [id])
+  await payments.sweep()
+  await payments.reconcile(id)
+  assert.equal(sent.alerts.length, 0)
+  await db.query(`update bookings set mismatch_alerted_at = now() - interval '11 minutes', mismatch_alert_sent_at = now() where id = $1`, [id])
+  await payments.sweep()
+  await payments.reconcile(id)
+  assert.equal(sent.alerts.length, 0)
+})
+
+test('catering: a stale unsent claim is re-sent (also EXPIRED); fresh and sent ones are not', async () => {
+  const stale = await createOrder()
+  const fresh = await createOrder()
+  const done = await createOrder()
+  for (const id of [stale, fresh, done]) fake.payments[id] = reply(id, 'PAYMENT_SUCCESS', { amount: { value: '10.00' }, currency: 'PHP' })
+  await db.query(`update catering_orders set status = 'EXPIRED', expires_at = now() - interval '1 day', mismatch_alerted_at = now() - interval '11 minutes' where id = $1`, [stale])
+  await db.query(`update catering_orders set mismatch_alerted_at = now() - interval '1 minute' where id = $1`, [fresh])
+  await db.query(`update catering_orders set mismatch_alerted_at = now() - interval '11 minutes', mismatch_alert_sent_at = now() where id = $1`, [done])
+  await payments.sweep()
+  assert.equal(sent.alerts.length, 1)
+  const o = await row('catering_orders', stale)
+  assert.equal(o.status, 'EXPIRED')
+  assert.notEqual(o.mismatch_alert_sent_at, null)
+})
+
+test('a failed claim release is logged, not swallowed', async () => {
+  const id = await createBooking()
+  fake.payments[id] = reply(id, 'PAYMENT_SUCCESS', WRONG)
+  control.failAlerts = true
+  const realQuery = db.query
+  const realError = console.error
+  const logged = []
+  db.query = (text, ...rest) => (String(text).includes('mismatch_alerted_at = null') ? Promise.reject(new Error('db down')) : realQuery(text, ...rest))
+  console.error = (...args) => logged.push(args.join(' '))
+  try {
+    await payments.reconcile(id)
+  } finally {
+    db.query = realQuery
+    console.error = realError
+  }
+  assert.ok(logged.some((l) => l.includes('could not release mismatch alert claim')))
+  // the claim stays set; once stale, the sweep sends it
+  control.failAlerts = false
+  await db.query(`update bookings set mismatch_alerted_at = now() - interval '11 minutes' where id = $1`, [id])
+  await payments.sweep()
+  assert.equal(sent.alerts.length, 1)
+})
+
+// ---- L-2: failed / cancelled records are re-checked -------------------------------------
+for (const terminal of ['PAYMENT_FAILED', 'CANCELLED']) {
+  test(`hotel: a ${terminal} booking inside the window is confirmed by the sweep when Maya reports a matching payment`, async () => {
+    const id = await createBooking()
+    await db.query(`update bookings set status = $2, created_at = now() - interval '5 minutes' where id = $1`, [id, terminal])
+    fake.payments[id] = reply(id, 'PAYMENT_SUCCESS', HOTEL_OK)
+    await payments.sweep()
+    assert.equal((await row('bookings', id)).status, 'CONFIRMED')
+    assert.ok(sent.alerts.some((s) => s.startsWith('Late payment')))
+    assert.equal(sent.hotelOwner, 1)
+  })
+
+  test(`hotel: a ${terminal} booking outside the window is not re-checked`, async () => {
+    const id = await createBooking()
+    await db.query(`update bookings set status = $2, created_at = now() - interval '2 hours', expires_at = now() - interval '30 minutes' where id = $1`, [id, terminal])
+    fake.payments[id] = reply(id, 'PAYMENT_SUCCESS', HOTEL_OK)
+    await payments.sweep()
+    assert.equal((await row('bookings', id)).status, terminal)
+  })
+
+  test(`catering: a ${terminal} order inside the window is confirmed by the sweep; outside it is not`, async () => {
+    const inside = await createOrder()
+    const outside = await createOrder()
+    await db.query(`update catering_orders set status = $2, created_at = now() - interval '5 minutes' where id = $1`, [inside, terminal])
+    await db.query(`update catering_orders set status = $2, created_at = now() - interval '2 hours', expires_at = now() - interval '30 minutes' where id = $1`, [outside, terminal])
+    fake.payments[inside] = reply(inside, 'PAYMENT_SUCCESS', CATERING_OK)
+    fake.payments[outside] = reply(outside, 'PAYMENT_SUCCESS', CATERING_OK)
+    await payments.sweep()
+    assert.equal((await row('catering_orders', inside)).status, 'CONFIRMED')
+    assert.equal((await row('catering_orders', outside)).status, terminal)
+    assert.ok(sent.alerts.some((s) => s.startsWith('Late payment')))
+  })
+}
+
+test('wrong-amount then correct-amount paid entries confirm; only a wrong amount stays a mismatch', async () => {
+  const b = await createBooking()
+  fake.payments[b] = [
+    ...reply(b, 'PAYMENT_SUCCESS', { id: 'pay-w', ...WRONG }),
+    ...reply(b, 'PAYMENT_SUCCESS', { id: 'pay-r', ...HOTEL_OK }),
+  ]
+  await payments.reconcile(b)
+  assert.equal((await row('bookings', b)).status, 'CONFIRMED')
+  assert.equal(mismatchAlerts(), 0)
+
+  const o = await createOrder()
+  fake.payments[o] = [
+    ...reply(o, 'PAYMENT_SUCCESS', { id: 'pay-w', amount: { value: '10.00' }, currency: 'PHP' }),
+    ...reply(o, 'PAYMENT_SUCCESS', { id: 'pay-r', ...CATERING_OK }),
+  ]
+  await cateringPayments.reconcileOrder(o)
+  assert.equal((await row('catering_orders', o)).status, 'CONFIRMED')
+
+  const b2 = await createBooking()
+  fake.payments[b2] = reply(b2, 'PAYMENT_SUCCESS', WRONG)
+  await payments.reconcile(b2)
+  assert.equal((await row('bookings', b2)).status, 'PENDING_PAYMENT')
+  assert.equal(mismatchAlerts(), 1)
+})

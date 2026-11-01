@@ -14,7 +14,7 @@ const maya = require('./maya')
 const mailer = require('./mailer')
 const { helpers } = require('./payments')
 
-const { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner, claimMismatchAlert, releaseMismatchAlert } = helpers
+const { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner, claimMismatchAlert, releaseMismatchAlert, markMismatchAlertSent, paymentMatches, pickPaid } = helpers
 const MAX_EMAIL_ATTEMPTS = 5
 const log = (...args) => console.log('[catering-payments]', ...args)
 
@@ -50,13 +50,13 @@ async function reconcileOrder(orderId) {
   }
 
   const mine = payments.filter((p) => !p?.requestReferenceNumber || p.requestReferenceNumber === orderId)
-  const paid = mine.find((p) => PAID_STATUSES.has(pickStatus(p)) && p.isPaid !== false)
+  // The amount we asked Maya for is amount_due (the full total, or the customer's down payment).
+  const paid = pickPaid(mine, order.amount_due_centavos)
 
   if (paid) {
     const centavos = pickCentavos(paid)
     const currency = pickCurrency(paid)
-    // The amount we asked Maya for is amount_due (the full total, or the customer's down payment).
-    if (centavos !== order.amount_due_centavos || (currency && currency !== 'PHP')) {
+    if (!paymentMatches(paid, order.amount_due_centavos)) {
       await recordAudit(orderId, paid, false)
       const deposit = order.payment_type === 'DEPOSIT' ? ` (down payment; order total PHP ${(order.total_centavos / 100).toFixed(2)})` : ''
       if (await claimMismatchAlert('catering_orders', orderId)) {
@@ -66,7 +66,8 @@ async function reconcileOrder(orderId) {
           `Expected amount due: PHP ${(order.amount_due_centavos / 100).toFixed(2)}${deposit} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
           'Please check this payment in Maya Manager before doing anything else.',
         ])
-        if (!sent) await releaseMismatchAlert('catering_orders', orderId)
+        if (sent) await markMismatchAlertSent('catering_orders', orderId)
+        else await releaseMismatchAlert('catering_orders', orderId)
       }
       return order
     }
@@ -183,12 +184,22 @@ async function sweep() {
   // Missing-webhook safety net: verify unpaid orders a few minutes after creation.
   const recent = await db.query(
     `select id from catering_orders
-      where status in ('PENDING_PAYMENT', 'PAYMENT_PROCESSING')
+      where status in ('PENDING_PAYMENT', 'PAYMENT_PROCESSING', 'PAYMENT_FAILED', 'CANCELLED')
         and created_at < now() - interval '3 minutes'
         and expires_at >= now() - interval '10 minutes'
       order by created_at limit 20`,
   )
   for (const { id } of recent.rows) await reconcileOrder(id)
+
+  // Mismatch alerts whose sender crashed (see lib/payments.js sweep).
+  const unsent = await db.query(
+    `select id from catering_orders
+      where status <> 'CONFIRMED'
+        and mismatch_alert_sent_at is null
+        and mismatch_alerted_at < now() - interval '10 minutes'
+      order by mismatch_alerted_at limit 20`,
+  )
+  for (const { id } of unsent.rows) await reconcileOrder(id)
 
   const stale = await db.query(
     `select id from catering_orders

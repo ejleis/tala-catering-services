@@ -22,7 +22,7 @@ export function formatPesoExact(amount) {
   return pesoExactFormatter.format(Number(amount))
 }
 
-const dateFormatter =new Intl.DateTimeFormat('en-PH', {
+const dateFormatter = new Intl.DateTimeFormat('en-PH', {
   year: 'numeric',
   month: 'long',
   day: 'numeric',
@@ -44,7 +44,19 @@ export function nightsBetween(checkIn, checkOut) {
   return nights > 0 ? nights : 0
 }
 
-/** Today as an ISO date string, for use as a date input's `min`. */
+// en-CA formats as YYYY-MM-DD.
+const manilaDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+/**
+ * Today's date in Manila as YYYY-MM-DD, for a date input's `min` and the date checks.
+ * Matches the server (manilaToday() in server/lib/validation.js). Using UTC here would
+ * offer yesterday's date between 00:00 and 07:59 Manila time.
+ */
 export function todayISO() {
-  return new Date().toISOString().split('T')[0]
+  return manilaDateFormatter.format(new Date())
 }
