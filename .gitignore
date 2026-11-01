@@ -5,3 +5,7 @@ dist
 .env.*.local
 *.log
 .DS_Store
+
+# Claude Code local-only files
+CLAUDE.local.md
+.claude/settings.local.json
