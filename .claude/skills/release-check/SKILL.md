@@ -33,7 +33,7 @@ Use whichever shell tool is available. The commands below work in PowerShell and
 - Render: `ALLOW_TEST_ITEM` and `TEST_ITEM_PESOS` are absent, unless a paid test is in progress. `MAYA_API_BASE` and `ALLOW_FAKE_MAYA` are never set.
 - Render log shows `Maya payments: ENABLED (production)` and no `hidden TEST ITEM is ON` warning.
 - Vercel: `VITE_API_BASE_URL` points at the Render API.
-- Supabase: `server/db/schema.sql` and `server/db/catering-orders.sql` have both been run.
+- Supabase: `server/db/schema.sql` and `server/db/catering-orders.sql` have both been run, and `catering-orders.sql` was re-run after its latest change (it now adds `payment_type` and `amount_due_centavos` for down payments).
 - The Maya secret key and the Supabase database password exposed earlier in chat have been rotated.
 - Maya: Void and Refund are enabled on the account.
 - Client has confirmed in writing: Kasalo and Handaan rates, hotel rates and tax treatment, and the cancellation and refund wording. Anything unconfirmed stays `[NEEDS PROOF]`.

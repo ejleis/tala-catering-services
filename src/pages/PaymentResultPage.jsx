@@ -175,7 +175,17 @@ function Details({ booking, catering }) {
           <Row label="Check-out" value={formatDate(booking.checkOut)} />
         </>
       )}
-      <Row label="Total" value={peso(booking.totalCentavos)} />
+      {catering && booking.amountPaidCentavos != null ? (
+        <>
+          <Row label="Order total" value={peso(booking.totalCentavos)} />
+          <Row label="Amount paid" value={peso(booking.amountPaidCentavos)} />
+          {booking.balanceCentavos > 0 && (
+            <Row label="Balance due" value={peso(booking.balanceCentavos)} />
+          )}
+        </>
+      ) : (
+        <Row label="Total" value={peso(booking.totalCentavos)} />
+      )}
     </dl>
   )
 }

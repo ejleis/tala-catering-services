@@ -4,15 +4,15 @@ import { submitCateringOrder } from '../lib/api.js'
 import { isMayaCheckoutUrl } from '../lib/maya.js'
 import { useSubmitForm } from '../hooks/useSubmitForm.js'
 import { LockIcon } from '../components/ui/Icons.jsx'
-import { PACKAGES } from '../data/catering.js'
-import { formatPeso, todayISO } from '../lib/format.js'
-import { LIMITS, validateCheckout } from '../lib/validation.js'
+import { PACKAGES, MIN_ONLINE_PAYMENT_PESOS } from '../data/catering.js'
+import { formatPeso, formatPesoExact, todayISO } from '../lib/format.js'
+import { LIMITS, pesosToCentavos, validateCheckout, validatePaymentAmount } from '../lib/validation.js'
 import { Container } from '../components/ui/Section.jsx'
 import { Field, TextInput } from '../components/ui/Field.jsx'
 import Alert from '../components/ui/Alert.jsx'
 import Button from '../components/ui/Button.jsx'
 
-const INITIAL = { name: '', email: '', phone: '', eventDate: '', venue: '', website: '' } // website = honeypot
+const INITIAL = { name: '', email: '', phone: '', eventDate: '', venue: '', website: '', paymentOption: 'full', amountPesos: '' } // website = honeypot
 
 /**
  * Catering checkout.
@@ -23,7 +23,8 @@ const INITIAL = { name: '', email: '', phone: '', eventDate: '', venue: '', webs
  * could have placed in history state. The server must do the same lookup
  * and never accept a price from the browser.
  *
- * Submitting sends only { packageId, guests, days } plus the contact details;
+ * Submitting sends only { packageId, guests, days } plus the contact details
+ * and the payment choice (paymentOption, and amountPesos when 'custom');
  * the server prices the order from its own catalogue, stores it as
  * PENDING_PAYMENT and returns a Maya checkout URL. The order is confirmed only
  * after the server has verified the payment with Maya.
@@ -45,10 +46,26 @@ export default function CheckoutPage() {
     days >= 1 &&
     days <= 30
 
+  // Display and UX only: the server prices the order and checks the amount again.
+  const total = validOrder ? pkg.pricePerGuest * guests * days : 0
+
   const { status, errors, formError, handleSubmit: submitForm, setErrors } = useSubmitForm({
-    validate: validateCheckout,
-    submit: (formValues, options) =>
-      submitCateringOrder({ ...formValues, packageId: pkg?.id, guests, days }, options),
+    validate: (formValues) => ({
+      ...validateCheckout(formValues),
+      ...validatePaymentAmount(formValues.paymentOption, formValues.amountPesos, total),
+    }),
+    submit: ({ paymentOption, amountPesos, ...formValues }, options) =>
+      submitCateringOrder(
+        {
+          ...formValues,
+          packageId: pkg?.id,
+          guests,
+          days,
+          paymentOption,
+          ...(paymentOption === 'custom' ? { amountPesos: amountPesos.trim() } : {}),
+        },
+        options,
+      ),
     onSuccess: (result) => {
       if (result?.checkoutUrl && isMayaCheckoutUrl(result.checkoutUrl)) {
         setCheckoutUrl(result.checkoutUrl)
@@ -71,7 +88,13 @@ export default function CheckoutPage() {
     )
   }
 
-  const total = pkg.pricePerGuest * guests * days
+  const custom = values.paymentOption === 'custom'
+  const customValid =
+    custom &&
+    Object.keys(validatePaymentAmount('custom', values.amountPesos, total)).length === 0
+  const payNowCentavos = custom ? (customValid ? pesosToCentavos(values.amountPesos) : null) : total * 100
+  const balanceCentavos = payNowCentavos == null ? 0 : total * 100 - payNowCentavos
+  const payNowLabel = payNowCentavos == null ? null : formatPesoExact(payNowCentavos / 100)
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -120,7 +143,7 @@ export default function CheckoutPage() {
 
       <Button type="submit" form="checkout-form" size="lg" loading={busy} className="mt-6 w-full">
         <LockIcon size={16} />
-        {busy ? 'Preparing payment…' : `Pay with Maya · ${formatPeso(total)}`}
+        {busy ? 'Preparing payment…' : payNowLabel ? `Pay with Maya · ${payNowLabel}` : 'Pay with Maya'}
       </Button>
 
       {/* [NEEDS PROOF] Placeholder wording — the client must approve their real cancellation and refund policy before launch. */}
@@ -175,6 +198,57 @@ export default function CheckoutPage() {
             </Field>
           </div>
 
+          <fieldset className="mt-8" aria-describedby={errors.paymentOption ? 'payment-option-error' : undefined}>
+            <legend className="mb-3 font-display text-xl font-semibold">Payment</legend>
+            <div className="space-y-3">
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink-200 p-4 has-[:checked]:border-brand-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500">
+                <input type="radio" name="paymentOption" value="full" className="mt-1 accent-brand-600"
+                  checked={!custom} onChange={handleChange} />
+                <span className="text-sm font-semibold text-ink-900">
+                  Pay in full · {formatPeso(total)}
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink-200 p-4 has-[:checked]:border-brand-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500">
+                <input type="radio" name="paymentOption" value="custom" className="mt-1 accent-brand-600"
+                  checked={custom} onChange={handleChange} />
+                <span>
+                  <span className="block text-sm font-semibold text-ink-900">Pay another amount</span>
+                  {/* [NEEDS PROOF] The client must approve this down payment wording. */}
+                  <span className="mt-1 block text-xs text-ink-500">
+                    Pay a down payment now; the balance is settled directly with Tala&apos;s Event
+                    Catering Services.
+                  </span>
+                </span>
+              </label>
+            </div>
+            {errors.paymentOption && (
+              <p id="payment-option-error" role="alert" className="mt-1.5 text-xs font-medium text-red-600">
+                {errors.paymentOption}
+              </p>
+            )}
+
+            {custom && (
+              <Field
+                label="Amount to pay now"
+                required
+                error={errors.amountPesos}
+                hint={`Minimum ${formatPesoExact(MIN_ONLINE_PAYMENT_PESOS)} · Maximum ${formatPesoExact(total)}`}
+                className="mt-4"
+              >
+                {(props) => (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm text-ink-500" aria-hidden="true">
+                      ₱
+                    </span>
+                    <TextInput {...props} name="amountPesos" inputMode="decimal" autoComplete="off"
+                      maxLength={12} className="pl-9" value={values.amountPesos}
+                      onChange={handleChange} hasError={!!errors.amountPesos} />
+                  </div>
+                )}
+              </Field>
+            )}
+          </fieldset>
+
           {/* Honeypot */}
           <div className="hidden" aria-hidden="true">
             <label htmlFor="checkout-website">Website</label>
@@ -209,6 +283,18 @@ export default function CheckoutPage() {
             </p>
             <p className="font-display text-3xl font-semibold text-brand-700">{formatPeso(total)}</p>
           </div>
+          <dl className="mt-5 space-y-2 border-t border-ink-200 pt-5 text-sm">
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink-500">Paying now</dt>
+              <dd className="font-semibold">{payNowLabel ?? '—'}</dd>
+            </div>
+            {balanceCentavos > 0 && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-ink-500">Balance after this payment</dt>
+                <dd className="font-semibold">{formatPesoExact(balanceCentavos / 100)}</dd>
+              </div>
+            )}
+          </dl>
         </aside>
 
         {/* Mobile: the order summary comes first, then the payment block below it. */}

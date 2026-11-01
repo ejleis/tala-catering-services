@@ -157,13 +157,23 @@ function cateringRows(o) {
       ${row('Venue / delivery address', o.venue)}
       ${row('Guests', o.guests)}
       ${row('Days', o.days)}
-      ${row('Total paid', peso(o.total_centavos))}`
+      ${row('Order total', peso(o.total_centavos))}
+      ${row('Amount paid', peso(o.amount_due_centavos))}
+      ${o.payment_type === 'DEPOSIT' ? row('Balance due', peso(o.total_centavos - o.amount_due_centavos)) : ''}`
+}
+
+// [NEEDS PROOF] Wording of the balance line must be approved by the client.
+function balanceNote(o) {
+  return o.payment_type === 'DEPOSIT'
+    ? "<p>The balance is to be settled directly with Tala's Event Catering Services.</p>"
+    : ''
 }
 
 /** Sent ONLY after the catering payment has been verified with Maya. */
 async function sendCateringConfirmedToOwner(o) {
+  const deposit = o.payment_type === 'DEPOSIT'
   const html = `
-    <h2 style="font-family:Georgia,serif">Catering Order PAID — ${escapeHtml(o.reference)}</h2>
+    <h2 style="font-family:Georgia,serif">Catering Order ${deposit ? 'DOWN PAYMENT RECEIVED' : 'PAID'} — ${escapeHtml(o.reference)}</h2>
     <table style="font-family:Arial,sans-serif;font-size:14px;border-collapse:collapse">
       ${cateringRows(o)}
       ${row('Customer', o.customer_name)}
@@ -171,12 +181,13 @@ async function sendCateringConfirmedToOwner(o) {
       ${row('Phone', o.customer_phone)}
       ${row('Maya receipt', o.receipt_number)}
     </table>
+    ${balanceNote(o)}
   `
   const { error } = await resend.emails.send({
     from: process.env.MAIL_FROM,
     to: process.env.OWNER_EMAIL,
     replyTo: `${safeHeader(o.customer_name)} <${safeHeader(o.customer_email)}>`,
-    subject: `PAID catering order ${safeHeader(o.reference)} — ${safeHeader(o.package_name)}`,
+    subject: `${deposit ? 'DOWN PAYMENT' : 'PAID'} catering order ${safeHeader(o.reference)} — ${safeHeader(o.package_name)}`,
     html,
   })
   if (error) throw new Error(`Resend: failed to send owner catering confirmation (${error.message ?? error.name})`)
@@ -193,6 +204,7 @@ async function sendCateringConfirmationToCustomer(o) {
       <table style="font-family:Arial,sans-serif;font-size:14px;border-collapse:collapse">
         ${cateringRows(o)}
       </table>
+      ${balanceNote(o)}
       <p>Please keep this email and your reference number. For any changes or questions, simply reply to this email.</p>
       <p>— Tala's Event Catering Services</p>
     `,

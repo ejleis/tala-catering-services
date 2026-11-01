@@ -9,7 +9,20 @@ export function formatPeso(amount) {
   return pesoFormatter.format(Number(amount))
 }
 
-const dateFormatter = new Intl.DateTimeFormat('en-PH', {
+const pesoExactFormatter = new Intl.NumberFormat('en-PH', {
+  style: 'currency',
+  currency: 'PHP',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+/** Peso amount with centavos, e.g. ₱5,000.50. Takes pesos, not centavos. */
+export function formatPesoExact(amount) {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return '—'
+  return pesoExactFormatter.format(Number(amount))
+}
+
+const dateFormatter =new Intl.DateTimeFormat('en-PH', {
   year: 'numeric',
   month: 'long',
   day: 'numeric',

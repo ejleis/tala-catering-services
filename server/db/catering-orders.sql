@@ -41,6 +41,48 @@ drop trigger if exists catering_orders_updated_at on catering_orders;
 create trigger catering_orders_updated_at before update on catering_orders
   for each row execute function set_updated_at();
 
+-- Down payments. The customer may pay the full total online (payment_type FULL) or any
+-- amount from a minimum up to the total (DEPOSIT); the balance is settled offline with
+-- Tala, so there is still exactly ONE Maya payment per order. amount_due_centavos is the
+-- amount we ask Maya for and the amount reconcileOrder() verifies; total_centavos is
+-- unchanged. Status CONFIRMED means "the payment we asked for was verified".
+-- Written as guarded ALTERs so it upgrades an existing table and is safe to re-run.
+alter table catering_orders add column if not exists payment_type text not null default 'FULL';
+alter table catering_orders add column if not exists amount_due_centavos bigint;
+update catering_orders set amount_due_centavos = total_centavos where amount_due_centavos is null;
+alter table catering_orders alter column amount_due_centavos set not null;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'catering_payment_type_valid') then
+    alter table catering_orders add constraint catering_payment_type_valid
+      check (payment_type in ('FULL', 'DEPOSIT'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'catering_amount_due_valid') then
+    alter table catering_orders add constraint catering_amount_due_valid
+      check (amount_due_centavos > 0 and amount_due_centavos <= total_centavos);
+  end if;
+end $$;
+
+-- Inserts that do not name amount_due_centavos (older API code during a deploy) default
+-- it to the full total, so adding the column never breaks live checkouts.
+create or replace function public.catering_default_amount_due()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.amount_due_centavos is null then
+    new.amount_due_centavos := new.total_centavos;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists catering_orders_default_amount_due on catering_orders;
+create trigger catering_orders_default_amount_due before insert on catering_orders
+  for each row execute function public.catering_default_amount_due();
+
 -- Same lock-down as the other tables: RLS on, no policies, no public API access.
 alter table catering_orders enable row level security;
 revoke all on catering_orders from anon, authenticated;

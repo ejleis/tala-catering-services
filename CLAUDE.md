@@ -40,7 +40,7 @@ Render's free tier has cold starts.
 ## 4. Product decisions
 
 - **Catering:** Kasalo (₱1,100/guest) and Handaan (₱1,400/guest), minimum 50 guests, show an always-visible calculator (price × guests × days) and a **Checkout** button leading to `/checkout`. Bespoke stays inquiry-only.
-- **Catering payment:** full amount online through Maya (not a deposit). The cancellation/refund line under the Pay button is a **neutral placeholder** pending the client's real policy `[NEEDS PROOF]`.
+- **Catering payment:** online through Maya, either the **full amount** or a **down payment of any amount** the customer types, from the minimum up to the order total. The minimum is `CATERING_MIN_PAYMENT_PESOS` (default ₱1, Maya's apparent floor `[NEEDS PROOF]`: Maya publishes none, but ₱1 checkouts were accepted in the 12 Oct test). There is one Maya payment per order; the **balance is settled directly with Tala** offline (wording `[NEEDS PROOF]`). Hotels still pay in full. The cancellation/refund line under the Pay button is a **neutral placeholder** pending the client's real policy `[NEEDS PROOF]`.
 - **Mobile Checkout layout:** on mobile the order summary comes first and **Pay with Maya** sits below it; desktop keeps the button at the bottom of the details card.
 - **Hotels:** three partner hotels, one room each: Swiss-Belhotel Blulane (Executive One-Bedroom Suite, ₱8,000/night), Bay Area Suites Manila (Superior One Bedroom Suite, ₱5,238/night), Red Hotel Cubao (Executive Suite, ₱6,533/night). Hotel rates, availability and ratings are placeholders until each property confirms in writing `[NEEDS PROOF]`.
 - **Tax:** the server adds a placeholder 12% to hotel bookings (`TAX_RATE`, default 0.12) `[NEEDS PROOF]`. It is duplicated as `TAX_RATE = 0.12` in `src/components/hotels/BookingSummary.jsx` and the two must stay in sync. Catering totals carry no tax line.
@@ -50,7 +50,7 @@ Render's free tier has cold starts.
 ## 5. Architecture and trust model
 
 - **Prices are never trusted from the browser.** The server has its own price lists: `CATALOGUE` in `server/routes/bookings.js` and `PACKAGES` in `server/routes/catering.js`. They must match `src/data/hotels.js` and `src/data/catering.js`. After touching hotel data run `npm run check:rooms` (room IDs have drifted before).
-- **Only `reconcile()` confirms anything.** Webhooks, redirect URLs and the browser are hints: the server asks Maya (secret key, by our reference number) and compares reference, amount and currency with the database. Hotel logic is in `server/lib/payments.js`, catering logic in `server/lib/cateringPayments.js`. All of it is idempotent.
+- **Only `reconcile()` confirms anything.** Webhooks, redirect URLs and the browser are hints: the server asks Maya (secret key, by our reference number) and compares reference, amount and currency with the database. Hotel logic is in `server/lib/payments.js`, catering logic in `server/lib/cateringPayments.js`. All of it is idempotent. For catering, the amount compared is `amount_due_centavos` (the full total or the down payment, computed by the server from `paymentOption`/`amountPesos`), not `total_centavos`; `payment_type` is `FULL` or `DEPOSIT`.
 - **Money is whole centavos** end to end; Maya receives pesos.
 - **Flows:**
   - Hotel: `POST /api/bookings` → Maya checkout URL → `GET /api/bookings/:id/status` (the result page polls it).
@@ -64,7 +64,7 @@ Render's free tier has cold starts.
 
 ## 6. Environment variables (names only; values live on Render/Vercel)
 
-Server (Render): `DATABASE_URL`, `DATABASE_CA_CERT` (optional), `MAYA_ENVIRONMENT=production`, `MAYA_PUBLIC_KEY`, `MAYA_SECRET_KEY`, `FRONTEND_URL=https://www.tala-ecs.com`, `CLIENT_IP_HEADER=true-client-ip`, `MAYA_WEBHOOK_IPS` (optional override), `TAX_RATE`, `CORS_ORIGIN`, `RESEND_API_KEY`, `MAIL_FROM`, `OWNER_EMAIL`, `PORT`.
+Server (Render): `DATABASE_URL`, `DATABASE_CA_CERT` (optional), `MAYA_ENVIRONMENT=production`, `MAYA_PUBLIC_KEY`, `MAYA_SECRET_KEY`, `FRONTEND_URL=https://www.tala-ecs.com`, `CLIENT_IP_HEADER=true-client-ip`, `MAYA_WEBHOOK_IPS` (optional override), `TAX_RATE`, `CATERING_MIN_PAYMENT_PESOS` (optional, default 1), `CORS_ORIGIN`, `RESEND_API_KEY`, `MAIL_FROM`, `OWNER_EMAIL`, `PORT`.
 
 Frontend (Vercel): `VITE_API_BASE_URL` where the API is on another host.
 
@@ -72,7 +72,7 @@ Frontend (Vercel): `VITE_API_BASE_URL` where the API is on another host.
 
 ## 7. Testing
 
-- **Server tests:** `cd server && TEST_DATABASE_URL=postgresql://... npm test` (Node `node:test`, 24 tests, run serially). They use a fake Maya server and a real Postgres with both SQL files applied. They prove our logic, not Maya's real responses.
+- **Server tests:** `cd server && TEST_DATABASE_URL=postgresql://... npm test` (Node `node:test`, 34 tests, run serially). They use a fake Maya server and a real Postgres with both SQL files applied. They prove our logic, not Maya's real responses.
 - **Local fake Maya:** `npm run fake-maya` in `server/`, with `ALLOW_FAKE_MAYA=true` and `MAYA_API_BASE=http://localhost:4000` in `server/.env`.
 - **Frontend:** `npm run build`; `npm run check:rooms`.
 - **Pitfall for Claude's own shell:** `pkill -f <pattern>` can match and kill the shell running it. Kill by PID instead.
@@ -93,7 +93,8 @@ Off by default. To use it, set BOTH on Render: `ALLOW_TEST_ITEM=true` and `TEST_
 
 Kept in `CLAUDE.local.md` (local only, gitignored, loaded automatically by Claude Code), because this repo is public: key-rotation status, the live Render settings, and test progress do not belong in it. Product items that are safe to publish:
 
-- **Client must confirm:** Kasalo and Handaan rates (placeholders `[NEEDS PROOF]`), real hotel rates and tax treatment, and the cancellation/refund wording.
+- **Client must confirm:** Kasalo and Handaan rates (placeholders `[NEEDS PROOF]`), real hotel rates and tax treatment, the cancellation/refund wording, the down-payment balance wording, and whether ₱1 is an acceptable minimum down payment.
+- **Down-payment deploy order:** re-run `server/db/catering-orders.sql` in Supabase (it adds `payment_type` and `amount_due_centavos`) **before** the down-payment code reaches `main`; otherwise new catering orders fail.
 - Optional Supabase fix: `alter function public.set_updated_at() set search_path = '';` (advisor warning, not applied).
 
 ## 11. Delivery history (all on `main`)

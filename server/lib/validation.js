@@ -125,9 +125,27 @@ function validateBooking(body) {
   return { data, errors }
 }
 
+const PESO_AMOUNT = /^\d{1,9}(\.\d{1,2})?$/
+
+/** Strict "1234" / "1234.5" / "1234.50" -> whole centavos (string maths, no floats). Anything else -> null. */
+function pesosToCentavos(value) {
+  if (typeof value !== 'string' || !PESO_AMOUNT.test(value)) return null
+  const [whole, fraction = ''] = value.split('.')
+  return Number(whole) * 100 + Number(fraction.padEnd(2, '0'))
+}
+
 /** Catering order: only the package id, guest/day counts and contact details are accepted — never a price. */
 function validateCateringOrder(body) {
   const errors = {}
+
+  // Payment option: missing/empty means 'full' (backward compatible). Range checks live in the route.
+  const rawOption = body?.paymentOption
+  let paymentOption = null
+  if (rawOption === undefined || rawOption === null || rawOption === '') paymentOption = 'full'
+  else if (rawOption === 'full' || rawOption === 'custom') paymentOption = rawOption
+  const rawAmount = body?.amountPesos
+  const amountPesos =
+    typeof rawAmount === 'string' || typeof rawAmount === 'number' ? String(rawAmount).trim().slice(0, 20) : ''
 
   const data = {
     name: str(body?.name, LIMITS.name),
@@ -138,6 +156,13 @@ function validateCateringOrder(body) {
     packageId: str(body?.packageId, 50),
     guests: int(body?.guests, LIMITS.guests),
     days: int(body?.days, LIMITS.days),
+    paymentOption,
+    amountPesos,
+  }
+
+  if (paymentOption === null) errors.paymentOption = 'Please choose a valid payment option.'
+  else if (paymentOption === 'custom' && pesosToCentavos(amountPesos) === null) {
+    errors.amountPesos = 'Please enter a valid amount in pesos, with up to two decimal places.'
   }
 
   if (!data.name) errors.name = 'Please enter your full name.'
@@ -155,4 +180,4 @@ function validateCateringOrder(body) {
   return { data, errors }
 }
 
-module.exports = { validateInquiry, validateBooking, validateCateringOrder, deFormula, LIMITS }
+module.exports = { validateInquiry, validateBooking, validateCateringOrder, pesosToCentavos, deFormula, LIMITS }

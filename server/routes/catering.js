@@ -1,7 +1,7 @@
 const express = require('express')
 const crypto = require('node:crypto')
 const rateLimit = require('express-rate-limit')
-const { validateCateringOrder } = require('../lib/validation')
+const { validateCateringOrder, pesosToCentavos } =require('../lib/validation')
 const db = require('../lib/db')
 const maya = require('../lib/maya')
 const cateringPayments = require('../lib/cateringPayments')
@@ -53,6 +53,24 @@ function getPackages() {
   return { ...PACKAGES, test: { name: 'Test Package (internal)', rate: pesos, minimumGuests: 1 } }
 }
 
+/**
+ * Smallest online payment (down payment) in centavos. CATERING_MIN_PAYMENT_PESOS
+ * must be a number from 1 to 100000 with at most two decimals, otherwise PHP 1.
+ *
+ * [NEEDS PROOF] The PHP 1 default: Maya publishes no minimum. PHP 1 checkouts
+ * were accepted in the 12 Oct 2026 live test, and Xendit/Antom list PHP 1.00
+ * for Maya. The client should choose the real minimum.
+ */
+function minPaymentCentavos() {
+  const raw = (process.env.CATERING_MIN_PAYMENT_PESOS ?? '').trim()
+  if (!/^\d{1,6}(\.\d{1,2})?$/.test(raw)) return 100
+  const centavos = pesosToCentavos(raw)
+  return centavos >= 100 && centavos <= 10_000_000 ? centavos : 100
+}
+
+const formatPesos = (centavos) =>
+  `₱${Math.floor(centavos / 100).toLocaleString('en-US')}.${String(centavos % 100).padStart(2, '0')}`
+
 function buildReference() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
   const suffix = crypto.randomInt(0, 10_000).toString().padStart(4, '0')
@@ -65,8 +83,9 @@ async function insertOrder(client, row) {
       const { rows } = await client.query(
         `insert into catering_orders
            (reference, package_id, package_name, customer_name, customer_email, customer_phone,
-            event_date, venue, guests, days, rate_centavos, total_centavos, expires_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now() + interval '60 minutes')
+            event_date, venue, guests, days, rate_centavos, total_centavos,
+            payment_type, amount_due_centavos, expires_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now() + interval '60 minutes')
          returning id, reference`,
         [buildReference(), ...row],
       )
@@ -110,16 +129,36 @@ router.post('/', submitLimiter, async (req, res, next) => {
     const rateCentavos = Math.round(pkg.rate * 100)
     const total = rateCentavos * data.guests * data.days
 
+    // What the customer pays online now. Full by default; or a down payment between the minimum and the total.
+    let amountDue = total
+    if (data.paymentOption === 'custom') {
+      const requested = pesosToCentavos(data.amountPesos) // format already validated
+      const minimum = Math.min(minPaymentCentavos(), total)
+      if (requested < minimum) {
+        return res.status(400).json({
+          message: `The minimum online payment is ${formatPesos(minimum)}.`,
+          errors: { amountPesos: `The minimum online payment is ${formatPesos(minimum)}.` },
+        })
+      }
+      if (requested > total) {
+        const message = `The amount cannot be more than the order total of ${formatPesos(total)}.`
+        return res.status(400).json({ message, errors: { amountPesos: message } })
+      }
+      amountDue = requested
+    }
+    const paymentType = amountDue === total ? 'FULL' : 'DEPOSIT'
+
     const order = await db.tx((client) =>
       insertOrder(client, [
         data.packageId, pkg.name, data.name, data.email, data.phone,
         data.eventDate, data.venue, data.guests, data.days, rateCentavos, total,
+        paymentType, amountDue,
       ]),
     )
 
     let checkout
     try {
-      checkout = await maya.createCheckout({ bookingId: order.id, totalCentavos: total, kind: 'catering' })
+      checkout = await maya.createCheckout({ bookingId: order.id, totalCentavos: amountDue, kind: 'catering' })
     } catch (error) {
       console.error('[catering] Maya checkout creation failed:', error.message, error.mayaCode ?? '')
       await db.query(`update catering_orders set status = 'PAYMENT_FAILED' where id = $1`, [order.id])
@@ -133,6 +172,8 @@ router.post('/', submitLimiter, async (req, res, next) => {
       reference: order.reference,
       orderId: order.id,
       status: 'PENDING_PAYMENT',
+      paymentType,
+      amountDueCentavos: amountDue,
       checkoutUrl: checkout.redirectUrl,
     })
   } catch (error) {
@@ -164,7 +205,12 @@ router.get('/:id/status', statusLimiter, async (req, res, next) => {
       }
     }
 
+    const amountPaid = order.status === 'CONFIRMED' ? Number(order.amount_due_centavos) : 0
+    const total = Number(order.total_centavos)
     return res.json({
+      paymentType: order.payment_type,
+      amountPaidCentavos: amountPaid,
+      balanceCentavos: total - amountPaid,
       reference: order.reference,
       status: order.status,
       packageName: order.package_name,

@@ -7,6 +7,8 @@
  * every request; see server/lib/validation.js, which mirrors this file.
  */
 
+import { MIN_ONLINE_PAYMENT_PESOS } from '../data/catering.js'
+
 export const LIMITS = {
   name: 100,
   email: 254, // RFC 5321 maximum
@@ -127,6 +129,51 @@ export function validateCheckout(values) {
   if (!isNonEmpty(values.venue)) errors.venue = 'Please enter the event venue or delivery address.'
   else if (values.venue.length > LIMITS.venue) errors.venue = 'Venue is too long.'
 
+  return errors
+}
+
+const AMOUNT_PATTERN = /^\d{1,9}(\.\d{1,2})?$/
+
+/**
+ * Converts a typed peso string such as "5000.5" to whole centavos (500050)
+ * using string maths only, or returns null when it is not a valid amount.
+ */
+export function pesosToCentavos(value) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!AMOUNT_PATTERN.test(text)) return null
+  const [whole, fraction = ''] = text.split('.')
+  return Number(whole) * 100 + Number(fraction.padEnd(2, '0'))
+}
+
+const pesoText = (centavos) =>
+  `₱${(centavos / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * Validates the catering payment choice. `amount` is the typed peso string,
+ * `total` the order total in pesos (display only; the server decides).
+ * Returns { amountPesos? }. UX only; the server re-checks everything.
+ */
+export function validatePaymentAmount(option, amount, total) {
+  const errors = {}
+  if (option !== 'custom') return errors
+
+  const text = typeof amount === 'string' ? amount.trim() : ''
+  if (!text) {
+    errors.amountPesos = 'Please enter the amount you wish to pay now.'
+    return errors
+  }
+  const centavos = pesosToCentavos(text)
+  if (centavos === null) {
+    errors.amountPesos = 'Please enter a valid amount, e.g. 5000 or 5000.50.'
+    return errors
+  }
+  const minCentavos = Math.round(MIN_ONLINE_PAYMENT_PESOS * 100)
+  const totalCentavos = Math.round(Number(total) * 100)
+  if (centavos < minCentavos) {
+    errors.amountPesos = `Please enter an amount of at least ${pesoText(minCentavos)}.`
+  } else if (centavos > totalCentavos) {
+    errors.amountPesos = `The amount cannot be more than the order total of ${pesoText(totalCentavos)}.`
+  }
   return errors
 }
 

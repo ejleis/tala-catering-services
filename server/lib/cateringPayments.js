@@ -55,12 +55,14 @@ async function reconcileOrder(orderId) {
   if (paid) {
     const centavos = pickCentavos(paid)
     const currency = pickCurrency(paid)
-    if (centavos !== order.total_centavos || (currency && currency !== 'PHP')) {
+    // The amount we asked Maya for is amount_due (the full total, or the customer's down payment).
+    if (centavos !== order.amount_due_centavos || (currency && currency !== 'PHP')) {
       await recordAudit(orderId, paid, false)
+      const deposit = order.payment_type === 'DEPOSIT' ? ` (down payment; order total PHP ${(order.total_centavos / 100).toFixed(2)})` : ''
       await alertOwner(`Payment mismatch — catering order ${order.reference}`, [
         'Maya reports a successful payment, but it does not match our record. The order was NOT confirmed.',
         `Order: ${order.reference} (${order.package_name})`,
-        `Expected: PHP ${(order.total_centavos / 100).toFixed(2)} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
+        `Expected amount due: PHP ${(order.amount_due_centavos / 100).toFixed(2)}${deposit} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
         'Please check this payment in Maya Manager before doing anything else.',
       ])
       return order

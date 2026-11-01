@@ -170,3 +170,156 @@ test('sweep verifies unpaid orders after 3 minutes (missing-webhook safety net) 
   assert.equal((await order(missed.body.orderId)).status, 'CONFIRMED')
   assert.equal((await order(unpaid.body.orderId)).status, 'EXPIRED')
 })
+
+// ---- Down payments (payment_type FULL / DEPOSIT) -------------------------------------------
+
+const kasalo = (extra = {}) => ({ packageId: 'kasalo', ...extra }) // 1100 x 50 x 1 = PHP 55,000.00 = 5,500,000 centavos
+async function withEnv(name, value, fn) {
+  const before = process.env[name]
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+  try { await fn() } finally {
+    if (before === undefined) delete process.env[name]
+    else process.env[name] = before
+  }
+}
+
+test('no paymentOption charges the full total exactly as before, stored as FULL', async () => {
+  const { res, body } = await create(kasalo())
+  assert.equal(res.status, 201)
+  assert.equal(fake.checkouts[0].totalAmount.value, 55000)
+  assert.equal(body.paymentType, 'FULL')
+  assert.equal(body.amountDueCentavos, 5_500_000)
+  const row = await order(body.orderId)
+  assert.equal(row.payment_type, 'FULL')
+  assert.equal(row.amount_due_centavos, 5_500_000)
+  const explicit = await create(kasalo({ paymentOption: 'full', amountPesos: '10' })) // amount ignored for 'full'
+  assert.equal(explicit.res.status, 201)
+  assert.equal(fake.checkouts[1].totalAmount.value, 55000)
+})
+
+test('custom amount creates a DEPOSIT checkout for exactly that amount; total is unchanged', async () => {
+  const { res, body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '5000.50' }))
+  assert.equal(res.status, 201)
+  assert.equal(fake.checkouts[0].totalAmount.value, 5000.5)
+  assert.equal(body.paymentType, 'DEPOSIT')
+  assert.equal(body.amountDueCentavos, 500_050)
+  const row = await order(body.orderId)
+  assert.equal(row.payment_type, 'DEPOSIT')
+  assert.equal(row.amount_due_centavos, 500_050)
+  assert.equal(row.total_centavos, 5_500_000)
+  const numeric = await create(kasalo({ paymentOption: 'custom', amountPesos: 2500 })) // a number is accepted via String()
+  assert.equal(numeric.res.status, 201)
+  assert.equal(numeric.body.amountDueCentavos, 250_000)
+})
+
+test('custom amount equal to the total is stored as FULL', async () => {
+  const { res, body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '55000' }))
+  assert.equal(res.status, 201)
+  assert.equal(body.paymentType, 'FULL')
+  assert.equal((await order(body.orderId)).payment_type, 'FULL')
+  assert.equal(fake.checkouts[0].totalAmount.value, 55000)
+})
+
+test('invalid custom amounts and unknown options are rejected with 400 and create nothing', async () => {
+  const cases = [
+    kasalo({ paymentOption: 'custom', amountPesos: '0.50' }),
+    kasalo({ paymentOption: 'custom', amountPesos: '55000.01' }),
+    kasalo({ paymentOption: 'custom', amountPesos: '1.234' }),
+    kasalo({ paymentOption: 'custom', amountPesos: '-5' }),
+    kasalo({ paymentOption: 'custom', amountPesos: 'abc' }),
+    kasalo({ paymentOption: 'custom', amountPesos: '1,000' }),
+    kasalo({ paymentOption: 'custom', amountPesos: '₱1000' }),
+    kasalo({ paymentOption: 'custom', amountPesos: '' }),
+    kasalo({ paymentOption: 'custom' }),
+    kasalo({ paymentOption: 'custom', amountPesos: { $gt: 1 } }),
+    kasalo({ paymentOption: 'deposit', amountPesos: '1000' }),
+    kasalo({ paymentOption: 7 }),
+  ]
+  for (const extra of cases) assert.equal((await create(extra)).res.status, 400, JSON.stringify(extra))
+  assert.equal(fake.checkouts.length, 0)
+  assert.equal((await db.query('select count(*)::int as n from catering_orders')).rows[0].n, 0)
+  const low = await create(kasalo({ paymentOption: 'custom', amountPesos: '0.50' }))
+  assert.equal(low.body.message, 'The minimum online payment is ₱1.00.')
+  assert.ok(low.body.errors.amountPesos)
+  const high = await create(kasalo({ paymentOption: 'custom', amountPesos: '60000' }))
+  assert.equal(high.body.message, 'The amount cannot be more than the order total of ₱55,000.00.')
+})
+
+test('browser-sent amountDueCentavos / total / payment_type are ignored', async () => {
+  const { res, body } = await create(kasalo({
+    paymentOption: 'custom', amountPesos: '3000', amountDueCentavos: 100, total: 1, totalCentavos: 1, payment_type: 'FULL', paymentType: 'FULL',
+  }))
+  assert.equal(res.status, 201)
+  assert.equal(body.amountDueCentavos, 300_000)
+  assert.equal(fake.checkouts[0].totalAmount.value, 3000)
+  const row = await order(body.orderId)
+  assert.equal(row.payment_type, 'DEPOSIT')
+  assert.equal(row.total_centavos, 5_500_000)
+})
+
+test('CATERING_MIN_PAYMENT_PESOS sets the minimum; invalid values fall back to PHP 1', async () => {
+  await withEnv('CATERING_MIN_PAYMENT_PESOS', '100', async () => {
+    assert.equal((await create(kasalo({ paymentOption: 'custom', amountPesos: '50' }))).res.status, 400)
+    assert.equal((await create(kasalo({ paymentOption: 'custom', amountPesos: '100' }))).res.status, 201)
+    const low = await create(kasalo({ paymentOption: 'custom', amountPesos: '99.99' }))
+    assert.equal(low.body.message, 'The minimum online payment is ₱100.00.')
+  })
+  for (const bad of ['abc', '0', '100001', '1.234', '-5', '']) {
+    await withEnv('CATERING_MIN_PAYMENT_PESOS', bad, async () => {
+      assert.equal((await create(kasalo({ paymentOption: 'custom', amountPesos: '0.99' }))).res.status, 400, bad)
+      assert.equal((await create(kasalo({ paymentOption: 'custom', amountPesos: '1' }))).res.status, 201, bad)
+    })
+  }
+})
+
+test('a deposit order is CONFIRMED only by a Maya payment equal to the amount due (replay harmless)', async () => {
+  const { body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '5000.50' }))
+  fake.payments[body.orderId] = paid(body.orderId, { amount: { value: '5000.50' } })
+  for (let i = 0; i < 2; i += 1) {
+    await post('/api/maya/webhook', { id: 'pay-1', requestReferenceNumber: body.orderId }, { 'True-Client-IP': MAYA_IP })
+    await wait()
+  }
+  const row = await order(body.orderId)
+  assert.equal(row.status, 'CONFIRMED')
+  assert.equal(row.payment_type, 'DEPOSIT')
+  assert.equal(emails.owner, 1)
+  assert.equal(emails.customer, 1)
+  assert.equal(emails.alerts.length, 0)
+})
+
+test('a deposit order is NOT confirmed by a payment equal to the order total, and the owner is alerted', async () => {
+  const { body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '5000.50' }))
+  fake.payments[body.orderId] = paid(body.orderId, { amount: { value: '55000.00' } })
+  await post('/api/maya/webhook', { id: 'pay-1', requestReferenceNumber: body.orderId }, { 'True-Client-IP': MAYA_IP })
+  await wait()
+  assert.equal((await order(body.orderId)).status, 'PENDING_PAYMENT')
+  assert.equal(emails.alerts.length, 1)
+  assert.equal(emails.owner, 0)
+})
+
+test('delayed webhook: the sweep still confirms a deposit paid at the exact amount due', async () => {
+  const payments = require('../lib/payments')
+  const { body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '1200' }))
+  fake.payments[body.orderId] = paid(body.orderId, { amount: { value: '1200.00' } })
+  await db.query(`update catering_orders set created_at = now() - interval '4 minutes' where id = $1`, [body.orderId])
+  await payments.sweep()
+  assert.equal((await order(body.orderId)).status, 'CONFIRMED')
+})
+
+test('status endpoint reports paymentType, amountPaidCentavos and balanceCentavos without personal data', async () => {
+  const { body } = await create(kasalo({ paymentOption: 'custom', amountPesos: '5000.50' }))
+  let status = await (await get(`/api/catering-orders/${body.orderId}/status`)).json()
+  assert.equal(status.paymentType, 'DEPOSIT')
+  assert.equal(status.amountPaidCentavos, 0)
+  assert.equal(status.balanceCentavos, 5_500_000)
+  fake.payments[body.orderId] = paid(body.orderId, { amount: { value: '5000.50' } })
+  await wait(4100) // the status endpoint throttles Maya look-ups to one per 4 seconds per order
+  status = await (await get(`/api/catering-orders/${body.orderId}/status`)).json()
+  assert.equal(status.status, 'CONFIRMED')
+  assert.equal(status.amountPaidCentavos, 500_050)
+  assert.equal(status.balanceCentavos, 4_999_950)
+  assert.equal(status.totalCentavos, 5_500_000)
+  const text = JSON.stringify(status)
+  for (const secret of ['customer@example.com', 'Test Customer', '0917', 'Sample Street']) assert.equal(text.includes(secret), false)
+})
