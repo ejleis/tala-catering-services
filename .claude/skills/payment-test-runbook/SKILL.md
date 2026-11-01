@@ -99,7 +99,12 @@ order by received_at desc
 limit 5;
 ```
 
-A row received just after you paid, with `verified = true`, proves Maya delivered the webhook and the server matched it. No row means confirmation came from the status check or the 5-minute sweeper instead. That is the open webhook problem to raise with Maya support. Do not paste the `payload` column here.
+Read it by `source_ip`, not by `verified`. The table holds two kinds of rows:
+
+- **Webhook delivery:** `source_ip` is filled in (one of Maya's IPs). Only Maya's webhook creates these. This row keeps `verified = false` and `processed_at` empty; that is normal.
+- **Server check (audit):** `source_ip` is empty and `verified = true`. The server writes this whenever it confirms a payment by asking Maya itself (status check, sweeper, or after a webhook).
+
+A row with `source_ip` received just after you paid proves Maya delivered the webhook. If the only new rows have an empty `source_ip`, confirmation came from the status check or the 5-minute sweeper, and the webhook never arrived. That is the open webhook problem to raise with Maya support. Do not paste the `payload` column here.
 
 Also check the emails: the owner email to `OWNER_EMAIL`, and the customer email to the address you used. If either is missing, look at the Resend dashboard Logs tab.
 
