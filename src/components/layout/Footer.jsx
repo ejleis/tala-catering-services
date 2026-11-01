@@ -70,8 +70,9 @@ export default function Footer() {
                   {BUSINESS.phone}
                 </a>
               </li>
-              <li>{BUSINESS.address}</li>
-              <li>{BUSINESS.hours}</li>
+              {/* Shown only once the client provides them in src/data/site.js. */}
+              {BUSINESS.address && <li>{BUSINESS.address}</li>}
+              {BUSINESS.hours && <li>{BUSINESS.hours}</li>}
             </ul>
           </div>
         </div>
@@ -80,7 +81,10 @@ export default function Footer() {
           <span>
             &copy; {new Date().getFullYear()} {BUSINESS.name}. All rights reserved.
           </span>
-          <span className="text-white/50">
+          <Link to="/privacy" className="transition-colors hover:text-white">
+            Privacy Notice
+          </Link>
+          <span className="w-full text-white/50 sm:w-auto">
             Hotel rates and availability shown are demo data pending confirmation.
           </span>
         </div>

@@ -39,10 +39,10 @@ Render's free tier has cold starts.
 
 ## 4. Product decisions
 
-- **Catering:** Kasalo (₱1,100/guest) and Handaan (₱1,400/guest), minimum 50 guests, show an always-visible calculator (price × guests × days) and a **Checkout** button leading to `/checkout`. Bespoke stays inquiry-only.
-- **Catering payment:** online through Maya, either the **full amount** or a **down payment of any amount** the customer types, from the minimum up to the order total. The minimum is `CATERING_MIN_PAYMENT_PESOS` (default ₱1: a real ₱1.00 down payment was accepted by Maya on 1 Nov 2026; whether ₱1 is an acceptable business minimum is the client's call `[NEEDS PROOF]`). There is one Maya payment per order; the **balance is settled directly with Tala** offline (wording `[NEEDS PROOF]`). Hotels still pay in full. The cancellation/refund line under the Pay button is a **neutral placeholder** pending the client's real policy `[NEEDS PROOF]`.
+- **Catering:** Kasalo (₱1,100/guest) and Handaan (₱1,400/guest), **rates provided by the client** (confirmed by Eli, 1 Nov 2026), minimum 50 guests, show an always-visible calculator (price × guests × days) and a **Checkout** button leading to `/checkout`. Bespoke stays inquiry-only.
+- **Catering payment:** online through Maya, either the **full amount** or a **down payment of any amount** the customer types, from the minimum up to the order total. The minimum is `CATERING_MIN_PAYMENT_PESOS` (default ₱1, **as requested by the client**; a real ₱1.00 down payment was accepted by Maya on 1 Nov 2026). There is one Maya payment per order; the **balance is settled directly with Tala** offline. The down-payment and balance wording, and the cancellation/refund line under the Pay button, are **accepted as is** (Eli, 1 Nov 2026); the client may ask for changes later.
 - **Mobile Checkout layout:** on mobile the order summary comes first and **Pay with Maya** sits below it; desktop keeps the button at the bottom of the details card.
-- **Hotels:** three partner hotels, one room each: Swiss-Belhotel Blulane (Executive One-Bedroom Suite, ₱8,000/night), Bay Area Suites Manila (Superior One Bedroom Suite, ₱5,238/night), Red Hotel Cubao (Executive Suite, ₱6,533/night). Hotel rates, availability and ratings are placeholders until each property confirms in writing `[NEEDS PROOF]`.
+- **Hotels:** three partner hotels, one room each: Swiss-Belhotel Blulane (Executive One-Bedroom Suite, ₱8,000/night), Bay Area Suites Manila (Superior One Bedroom Suite, ₱5,238/night), Red Hotel Cubao (Executive Suite, ₱6,533/night). **Hotel rates provided by the client** (confirmed by Eli, 1 Nov 2026). Availability and ratings are not confirmed `[NEEDS PROOF]`.
 - **Tax:** the server adds a placeholder 12% to hotel bookings (`TAX_RATE`, default 0.12) `[NEEDS PROOF]`. It is duplicated as `TAX_RATE = 0.12` in `src/components/hotels/BookingSummary.jsx` and the two must stay in sync. Catering totals carry no tax line.
 - **Production without a sandbox:** the client decided to go live on Maya production without a sandbox because of the deadline. Eli accepted the risk.
 - **No availability or double-booking check for hotels, by design** (decided by Eli, 1 Nov 2026): each listing is a room type with several real rooms behind it, so overlapping bookings are expected. If a hotel is full, the client voids (same day) or refunds the booking. Do not add an availability check unless asked.
@@ -93,9 +93,8 @@ Off by default. To use it, set BOTH on Render: `ALLOW_TEST_ITEM=true` and `TEST_
 
 Kept in `CLAUDE.local.md` (local only, gitignored, loaded automatically by Claude Code), because this repo is public: key-rotation status, the live Render settings, and test progress do not belong in it. Product items that are safe to publish:
 
-- **Client must confirm:** Kasalo and Handaan rates (placeholders `[NEEDS PROOF]`), real hotel rates and tax treatment, the cancellation/refund wording, the down-payment balance wording, and whether ₱1 is an acceptable minimum down payment.
-- **Down-payment deploy order:** re-run `server/db/catering-orders.sql` in Supabase (it adds `payment_type` and `amount_due_centavos`) **before** the down-payment code reaches `main`; otherwise new catering orders fail.
-- Optional Supabase fix: `alter function public.set_updated_at() set search_path = '';` (advisor warning, not applied).
+- **Client to confirm:** the 12% hotel tax treatment `[NEEDS PROOF]`; for the privacy notice (`/privacy`): a designated Data Protection Officer, specific retention periods, and a legal review of the notice.
+- **Database changes go to Supabase before the code that uses them reaches `main`** (all SQL files are additive and re-runnable).
 
 ## 11. Delivery history (all on `main`)
 
@@ -103,7 +102,8 @@ Hotel booking and Maya Checkout integration (`8982924`), webhook router mounted 
 
 ## 12. Findings from the 31 Oct 2026 repo review (verified in code)
 
-- `.github/workflows/deploy.yml` deploys to GitHub Pages on every push to `main`, while production is on Vercel. Decide whether to keep or remove it.
+- **GitHub Pages removed (1 Nov 2026):** `.github/workflows/deploy.yml` and the old `public/404.html` redirect were deleted; the Pages copy was a broken duplicate of the site. Production is Vercel only.
+- **Branch protection on `main` (1 Nov 2026):** GitHub ruleset "Protect main" blocks force pushes and deletion of `main`, for everyone. Pull requests are not required.
 - **`vercel.json` (added 1 Nov 2026):** rewrites every path to `/index.html` (before this, deep links such as Maya's return URL `/payment/success?b=…` hit the leftover GitHub Pages `public/404.html` and looped forever), and sends the security headers: CSP (`connect-src` allows only the site and https://tala-catering-api.onrender.com; fonts from Google, images from images.unsplash.com; `frame-ancestors 'none'`), `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP. HSTS comes from Vercel. **If you add a new external host (images, fonts, scripts, APIs), add it to the CSP or it will be blocked.** No `render.yaml` yet.
 - `npm run lint` exists but ESLint is not installed or configured.
 - **Database TLS:** Supabase "Enforce SSL on incoming connections" is on, and `DATABASE_CA_CERT` is set on Render (Supabase's CA certificate, tested locally first), so the API verifies it is talking to Supabase (1 Nov 2026). The code still falls back to encrypted-but-unverified if the variable is ever removed.

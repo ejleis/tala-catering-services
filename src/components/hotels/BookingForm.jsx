@@ -5,6 +5,7 @@ import { useSubmitForm } from '../../hooks/useSubmitForm.js'
 import { Field, TextInput, TextArea } from '../ui/Field.jsx'
 import Button from '../ui/Button.jsx'
 import Alert from '../ui/Alert.jsx'
+import PrivacyNote from '../ui/PrivacyNote.jsx'
 import { LockIcon } from '../ui/Icons.jsx'
 import { calculateTotals } from './BookingSummary.jsx'
 import { formatPeso } from '../../lib/format.js'
@@ -206,6 +207,8 @@ export default function BookingForm({ hotel, room, search }) {
         <LockIcon size={16} />
         {busy ? 'Preparing payment…' : `Pay with Maya${total ? ` · ${formatPeso(total)}` : ''}`}
       </Button>
+
+      <PrivacyNote />
 
       <p className="mt-3 text-center text-xs text-ink-500">
         You will be charged only on Maya&apos;s payment page, and you will receive a confirmation

@@ -5,13 +5,10 @@
  * this use by the client, who arranged the photographer directly with each
  * hotel. Stored under public/hotels/{slug}/.
  *
- * IMPORTANT — [NEEDS PROOF]
- * Room types, nightly rates, availability counts, ratings, and review counts
- * below are still DEMO PLACEHOLDER CONTENT and must be replaced with details
- * confirmed in writing by each property before this goes live. Publishing
- * invented rates or availability for a real hotel is both a commercial and a
- * legal risk for your client — this caveat applies to the data, not the
- * photos, which are already rights-cleared.
+ * Room types and nightly rates were provided by the client (confirmed
+ * 1 Nov 2026) and must match CATALOGUE in server/routes/bookings.js.
+ * [NEEDS PROOF] Availability counts, ratings and review counts below are not
+ * confirmed by the properties. The photos are already rights-cleared.
  */
 export const HOTELS = [
   {

@@ -172,7 +172,7 @@ function cateringRows(o) {
       ${o.payment_type === 'DEPOSIT' ? row('Balance due', peso(o.total_centavos - o.amount_due_centavos)) : ''}`
 }
 
-// [NEEDS PROOF] Wording of the balance line must be approved by the client.
+// Balance-line wording accepted 1 Nov 2026; the client may ask for changes.
 function balanceNote(o) {
   return o.payment_type === 'DEPOSIT'
     ? "<p>The balance is to be settled directly with Tala's Event Catering Services.</p>"
@@ -205,7 +205,7 @@ async function sendCateringConfirmedToOwner(o) {
 
 async function sendCateringConfirmationToCustomer(o) {
   const deposit = o.payment_type === 'DEPOSIT'
-  // [NEEDS PROOF] Down-payment wording must be approved by the client. It deliberately
+  // Down-payment wording accepted 1 Nov 2026 (the client may revise it). It deliberately
   // does not say "confirmed": only part of the order has been paid.
   const subject = deposit
     ? `Down payment received ${safeHeader(o.reference)} — Tala's Event Catering Services`

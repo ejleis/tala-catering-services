@@ -11,6 +11,7 @@ import { Container } from '../components/ui/Section.jsx'
 import { Field, TextInput } from '../components/ui/Field.jsx'
 import Alert from '../components/ui/Alert.jsx'
 import Button from '../components/ui/Button.jsx'
+import PrivacyNote from '../components/ui/PrivacyNote.jsx'
 
 const INITIAL = { name: '', email: '', phone: '', eventDate: '', venue: '', website: '', paymentOption: 'full', amountPesos: '' } // website = honeypot
 
@@ -176,7 +177,9 @@ export default function CheckoutPage() {
         {busy ? 'Preparing payment…' : payNowLabel ? `Pay with Maya · ${payNowLabel}` : 'Pay with Maya'}
       </Button>
 
-      {/* [NEEDS PROOF] Placeholder wording — the client must approve their real cancellation and refund policy before launch. */}
+      <PrivacyNote />
+
+      {/* Cancellation/refund wording accepted 1 Nov 2026; the client may supply their own policy text later. */}
       <p className="mt-3 text-center text-xs text-ink-500">
         For changes or cancellations after payment, please contact us directly. Any refund is
         handled by Tala&apos;s Event Catering Services in line with their policy.
@@ -243,7 +246,7 @@ export default function CheckoutPage() {
                   checked={custom} onChange={handleChange} />
                 <span>
                   <span className="block text-sm font-semibold text-ink-900">Pay another amount</span>
-                  {/* [NEEDS PROOF] The client must approve this down payment wording. */}
+                  {/* Down-payment wording accepted 1 Nov 2026; the client may revise it. */}
                   <span className="mt-1 block text-xs text-ink-500">
                     Pay a down payment now; the balance is settled directly with Tala&apos;s Event
                     Catering Services.

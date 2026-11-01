@@ -6,6 +6,7 @@ import HotelsPage from './pages/HotelsPage.jsx'
 import HotelDetailPage from './pages/HotelDetailPage.jsx'
 import CheckoutPage from './pages/CheckoutPage.jsx'
 import PaymentResultPage from './pages/PaymentResultPage.jsx'
+import PrivacyPage from './pages/PrivacyPage.jsx'
 import NotFoundPage from './pages/NotFoundPage.jsx'
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="hotels/:slug" element={<HotelDetailPage />} />
           <Route path="checkout" element={<CheckoutPage />} />
           <Route path="payment/:outcome" element={<PaymentResultPage />} />
+          <Route path="privacy" element={<PrivacyPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

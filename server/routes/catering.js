@@ -37,9 +37,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * package id, guests and days; the server looks the rate up and computes the
  * total itself.
  *
- * [NEEDS PROOF] These rates mirror src/data/catering.js, which the client has
- * not yet confirmed. They must be confirmed BEFORE real customers pay, and
- * kept identical in both files. Bespoke has no online price on purpose.
+ * Rates provided by the client (confirmed 1 Nov 2026). They mirror
+ * src/data/catering.js and must be kept identical in both files. Bespoke has
+ * no online price on purpose.
  */
 const PACKAGES = {
   kasalo: { name: 'Kasalo', rate: 1100, minimumGuests: 50 },
@@ -57,9 +57,8 @@ function getPackages() {
  * Smallest online payment (down payment) in centavos. CATERING_MIN_PAYMENT_PESOS
  * must be a number from 1 to 100000 with at most two decimals, otherwise PHP 1.
  *
- * [NEEDS PROOF] The PHP 1 default: Maya publishes no minimum. PHP 1 checkouts
- * were accepted in the 12 Oct 2026 live test, and Xendit/Antom list PHP 1.00
- * for Maya. The client should choose the real minimum.
+ * The PHP 1 default is the client's chosen minimum (1 Nov 2026). Maya publishes
+ * no minimum; a real PHP 1.00 payment was accepted and voided on 1 Nov 2026.
  */
 function minPaymentCentavos() {
   const raw = (process.env.CATERING_MIN_PAYMENT_PESOS ?? '').trim()

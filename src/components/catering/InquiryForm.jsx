@@ -7,6 +7,7 @@ import { todayISO, formatPeso } from '../../lib/format.js';
 import { Field, TextInput, TextArea, Select } from '../ui/Field.jsx';
 import Button from '../ui/Button.jsx';
 import Alert from '../ui/Alert.jsx';
+import PrivacyNote from '../ui/PrivacyNote.jsx';
 import { Section, SectionHeading } from '../ui/Section.jsx';
 import { BUSINESS } from '../../data/site.js';
 import { PhoneIcon, MailIcon, MapPinIcon, ClockIcon } from '../ui/Icons.jsx';
@@ -329,6 +330,8 @@ const InquiryForm = forwardRef(function InquiryForm(_props, ref) {
           <Button type="submit" size="lg" loading={busy} className="mt-6 w-full">
             {busy ? 'Sending inquiry…' : 'Send Inquiry'}
           </Button>
+
+          <PrivacyNote />
 
           <p className="mt-3 text-center text-xs text-ink-500">We use your details only to respond to this inquiry. No payment is collected on this form.</p>
         </form>

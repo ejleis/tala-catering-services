@@ -3,8 +3,8 @@
  * server prices every order from its OWN copy of these rates
  * (server/routes/catering.js) — keep the two identical. Bespoke is inquiry-only.
  *
- * [NEEDS PROOF] All package rates and inclusions are placeholders pending
- * the client's confirmed pricing sheet.
+ * Package rates (Kasalo, Handaan) were provided by the client (confirmed
+ * 1 Nov 2026). Inclusions and menu items are not separately confirmed [NEEDS PROOF].
  */
 
 export const SERVICES = [
@@ -120,9 +120,9 @@ export const PACKAGES = [
 
 // Smallest amount accepted for a catering payment made online (display and UX only).
 // Must match the server default (CATERING_MIN_PAYMENT_PESOS in server/routes/catering.js).
-// [NEEDS PROOF] Maya publishes no minimum payment amount (PHP 1 was accepted in a live test on
-// 12 Oct 2026). The server is the authority: if the minimum is raised on Render, its error
-// message shows the real figure.
+// PHP 1 is the client's chosen minimum (1 Nov 2026); Maya accepted a real PHP 1.00 payment.
+// The server is the authority: if the minimum is raised on Render, its error message shows
+// the real figure.
 export const MIN_ONLINE_PAYMENT_PESOS = 1;
 
 export const EVENT_TYPES = ['Wedding', 'Corporate Event', 'Debut', 'Birthday', 'Anniversary', 'Reunion', 'Other'];

@@ -95,7 +95,7 @@ export default function PaymentResultPage() {
 
   switch (booking.status) {
     case 'CONFIRMED': {
-      // [NEEDS PROOF] Down-payment wording must be approved by the client.
+      // Down-payment wording accepted 1 Nov 2026; the client may revise it.
       const deposit = catering && booking.paymentType === 'DEPOSIT'
       return (
         <Shell
