@@ -104,7 +104,7 @@ Hotel booking and Maya Checkout integration (`8982924`), webhook router mounted 
 ## 12. Findings from the 31 Oct 2026 repo review (verified in code)
 
 - `.github/workflows/deploy.yml` deploys to GitHub Pages on every push to `main`, while production is on Vercel. Decide whether to keep or remove it.
-- No `vercel.json`: the security headers listed in the README (CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, frame-ancestors) are not applied by anything in the repo. The CSP `connect-src` must name https://tala-catering-api.onrender.com. No `render.yaml` either.
+- **`vercel.json` (added 1 Nov 2026):** rewrites every path to `/index.html` (before this, deep links such as Maya's return URL `/payment/success?b=…` hit the leftover GitHub Pages `public/404.html` and looped forever), and sends the security headers: CSP (`connect-src` allows only the site and https://tala-catering-api.onrender.com; fonts from Google, images from images.unsplash.com; `frame-ancestors 'none'`), `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP. HSTS comes from Vercel. **If you add a new external host (images, fonts, scripts, APIs), add it to the CSP or it will be blocked.** No `render.yaml` yet.
 - `npm run lint` exists but ESLint is not installed or configured.
 - `DATABASE_CA_CERT` is optional, so the database connection can be encrypted but unverified.
 
