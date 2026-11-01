@@ -74,7 +74,10 @@ export default function CheckoutPage() {
       )
     },
     onSuccess: (result) => {
-      if (result?.amountDueCentavos !== expectedCentavos.current) {
+      // An older API omits amountDueCentavos and always charges the full total: fine for
+      // "Pay in full", but a down payment must not go ahead.
+      const charged = result?.amountDueCentavos ?? total * 100
+      if (charged !== expectedCentavos.current) {
         setAmountMismatch(true)
         return
       }
