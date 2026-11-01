@@ -31,6 +31,9 @@ const ON_FEATURE = makeRepo('feature/ai-integration', { upstream: 'feature/ai-in
 const FEATURE_TRACKING_MAIN = makeRepo('feature/x', { upstream: 'main' })
 const PUSH_MATCHING = makeRepo('feature/m', { config: { 'push.default': 'matching' } })
 const REMOTE_PUSH_MAP = makeRepo('feature/r', { config: { 'remote.origin.push': 'refs/heads/feature/r:refs/heads/main' } })
+const WITH_ALIASES = makeRepo('feature/a', {
+  config: { 'alias.x': 'push', 'alias.y': '!git', 'alias.z': 'x', 'alias.st': 'status -sb' },
+})
 test.after(() => {
   for (const dir of repos) fs.rmSync(dir, { recursive: true, force: true })
 })
@@ -249,6 +252,120 @@ test('allows ordinary development commands', () => {
   allowed('Bash', sh('npm run check:rooms'))
   allowed('PowerShell', sh('Select-String -Path src\\data\\hotels.js -Pattern rate'))
   allowed('Glob', { pattern: '**/*.js' })
+})
+
+// ---------------------------------------------------------------- search patterns are not paths
+
+test('allows search patterns that contain wildcard characters', () => {
+  allowed('PowerShell', sh('Select-String -Path src\\data\\hotels.js -Pattern \'[A-Z_]+\''))
+  allowed('PowerShell', sh('Select-String -Path x -Pattern \'TODO*\''))
+  allowed('PowerShell', sh('Select-String -Path x -SimpleMatch -Pattern "a*b"'))
+  allowed('PowerShell', sh('sls \'TODO*\' src\\a.js'))
+  allowed('PowerShell', sh('Select-String "TODO*" -Path src\\a.js'))
+  allowed('Bash', sh('grep -n \'process.env.*KEY\' server/routes/catering.js'))
+  allowed('Bash', sh('grep -n \'^remote:\\s*$\' file.txt'))
+  allowed('Bash', sh('grep -e \'a*b\' -n server/routes/catering.js'))
+  allowed('Bash', sh('rg \'fo+.*bar\' src'))
+  allowed('PowerShell', sh('git diff | Select-String -NotMatch "LF will be replaced"'))
+  allowed('PowerShell', sh('npm run check:rooms | Select-String -Pattern "^(✔|✖)"'))
+})
+
+test('still blocks searches whose path or glob can reach env files', () => {
+  blocked('PowerShell', sh('Select-String -Path server/* -Pattern X'))
+  blocked('PowerShell', sh('Select-String -Pattern X -Path server/*'))
+  blocked('PowerShell', sh('Select-String -Pattern X server/*'))
+  blocked('PowerShell', sh('sls X server/*'))
+  blocked('PowerShell', sh('Select-String -LiteralPath server/* -Pattern X'))
+  blocked('PowerShell', sh('Select-String -Path a.js,server/* -Pattern X'))
+  blocked('Bash', sh('grep KEY server/*'))
+  blocked('Bash', sh('grep -e KEY server/.e*'))
+  blocked('Bash', sh('grep -n KEY server/.*'))
+  blocked('Bash', sh('rg -g \'.e*\' KEY'))
+  blocked('Bash', sh('rg --glob=.e* KEY'))
+  blocked('Bash', sh('cat server/.e*'))
+  blocked('PowerShell', sh('Get-Content server/*'))
+  blocked('Bash', sh('grep -rn KEY server/'))
+})
+
+// ---------------------------------------------------------------- push bypasses
+
+test('asks for aliases and plumbing commands that push', () => {
+  asks('Bash', sh('git config alias.x push && git x origin main'))
+  asks('Bash', sh('git config alias.x push; git x origin main'))
+  asks('Bash', sh('git config --global alias.p "!git push" ; git p origin main'))
+  asks('Bash', sh('git -c alias.x=push x origin main'))
+  asks('Bash', sh('git x origin main'), WITH_ALIASES)
+  asks('Bash', sh('git z origin main'), WITH_ALIASES)
+  asks('Bash', sh('git y push origin main'), WITH_ALIASES)
+  asks('Bash', sh(`git -C "${WITH_ALIASES}" x origin main`), ON_FEATURE)
+  asks('Bash', sh('git subtree push --prefix=dist origin main'))
+  asks('Bash', sh('git subtree push --prefix=dist origin feature/x'))
+  asks('Bash', sh('git send-pack origin main'))
+  asks('Bash', sh('git send-pack git@github.com:o/r.git main'))
+  asks('Bash', sh('git-send-pack origin main'))
+  allowed('Bash', sh('git st'), WITH_ALIASES)
+  allowed('Bash', sh('git subtree pull --prefix=dist origin main'))
+  allowed('Bash', sh('git config alias.st status'))
+  blocked('Bash', sh('git x origin main'), WITH_ALIASES, { agent_id: 'abc123' })
+  blocked('Bash', sh('git send-pack origin main'), ON_FEATURE, { agent_id: 'abc123' })
+})
+
+test('asks before mutating gh api calls and gh repo sync', () => {
+  asks('Bash', sh('gh api -X PUT repos/o/r/contents/x -f message=m'))
+  asks('Bash', sh('gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc'))
+  asks('Bash', sh('gh api -XPOST repos/o/r/issues -f title=t'))
+  asks('Bash', sh('gh api --method DELETE repos/o/r/git/refs/heads/x'))
+  asks('Bash', sh('gh api --method=POST repos/o/r/issues'))
+  asks('Bash', sh('gh api -X post repos/o/r/issues'))
+  asks('Bash', sh('gh api repos/o/r/issues -f title=t'))
+  asks('Bash', sh('gh api repos/o/r/issues --input body.json'))
+  asks('Bash', sh('gh repo sync o/r'))
+  asks('Bash', sh('gh pr merge 5'))
+  asks('Bash', sh('bash -c "gh api -X PUT repos/o/r/contents/x"'))
+  allowed('Bash', sh('gh api repos/o/r/pulls'))
+  allowed('Bash', sh('gh api -X GET search/issues -f q=bug'))
+  allowed('Bash', sh('gh pr view 5'))
+  allowed('Bash', sh('gh pr create --title "Add gh api -X PUT docs" --body "text"'))
+})
+
+// ---------------------------------------------------------------- text that merely mentions a push
+
+test('does not treat commit messages or written files as pushes', () => {
+  const agent = { agent_id: 'abc123' }
+  allowed('Bash', sh('git commit -m "docs: explain git push origin main"'), ON_FEATURE, agent)
+  allowed('Bash', sh('git commit -am "never run git push by hand"'), ON_FEATURE, agent)
+  allowed('Bash', sh('git commit -m"x" -m "then git push origin main"'), ON_FEATURE, agent)
+  allowed('Bash', sh('git commit --message "git push origin main"'), ON_FEATURE, agent)
+  allowed('Bash', sh('gh pr create --title "t" --body "Run git push origin main later"'), ON_FEATURE, agent)
+  allowed('Bash', sh('echo "git push origin main"'), ON_FEATURE, agent)
+  allowed('PowerShell', sh('Set-Content notes.txt "git push origin main"'), ON_FEATURE, agent)
+  allowed('Bash', sh('grep -n "git push" docs/notes.md'), ON_FEATURE, agent)
+  allowed('PowerShell', sh('Select-String -Path README.md -Pattern "git push"'), ON_FEATURE, agent)
+  allowed('Bash', sh("cat > notes.md <<'EOF'\nRun this:\ngit push origin main\nEOF"), ON_FEATURE, agent)
+  allowed('Bash', sh("cat > notes.md <<EOF\ngit push origin main\nEOF\ngit status"), ON_FEATURE, agent)
+  allowed('Bash', sh("cat > deploy.sh <<'EOF'\n#!/bin/sh\ngit push origin main\nEOF"), ON_FEATURE, agent)
+  allowed('Bash', sh('git commit -m "$(cat <<\'EOF\'\nFix things; do not git push origin main here\n\nIt\'s fine.\nEOF\n)"'), ON_FEATURE, agent)
+  allowed('PowerShell', sh("$msg = @'\nrun git push origin main\n'@\ngit commit -m $msg"), ON_FEATURE, agent)
+  allowed('PowerShell', sh("Set-Content -Path notes.md -Value @'\ngit push origin main\n'@"), ON_FEATURE, agent)
+})
+
+test('still asks for pushes hidden in nested shells and fed scripts', () => {
+  asks('Bash', sh('bash -c "git push origin feature/x"'))
+  asks('Bash', sh('sh -c \'git push origin main\''))
+  asks('PowerShell', sh('powershell -Command "git push origin feature/x"'))
+  asks('PowerShell', sh('pwsh -c "git push"'))
+  asks('Bash', sh('ruby -e "system(\'git push origin main\')"'))
+  asks('Bash', sh('echo "$(git push origin main)"'))
+  asks('Bash', sh('git commit -m "$(git push origin main)"'))
+  asks('Bash', sh("bash <<'EOF'\ngit push origin main\nEOF"))
+  asks('Bash', sh("cat <<EOF | bash\ngit push origin main\nEOF"))
+  asks('Bash', sh('echo "git push origin main" | bash'))
+  asks('PowerShell', sh("$s = @'\ngit push origin main\n'@\niex $s"))
+  asks('Bash', sh("cat > notes.md <<'EOF'\nhello\nEOF\ngit push origin main"))
+  asks('Bash', sh('git commit -m "x" \n git push origin main'))
+  blocked('Bash', sh('bash -c "git push origin feature/x"'), ON_FEATURE, { agent_id: 'abc123' })
+  blocked('Bash', sh("bash <<'EOF'\ngit push origin main\nEOF"), ON_FEATURE, { agent_id: 'abc123' })
+  blocked('Bash', sh("cat > n.md <<'EOF'\nhi\nEOF\ngit push"), ON_FEATURE, { agent_id: 'abc123' })
 })
 
 test('fails closed on unparseable or unexpected input', () => {

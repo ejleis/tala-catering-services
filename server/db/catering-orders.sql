@@ -88,6 +88,11 @@ drop trigger if exists catering_orders_default_amount_due on catering_orders;
 create trigger catering_orders_default_amount_due before insert on catering_orders
   for each row execute function public.catering_default_amount_due();
 
+-- Hardening columns (additive, nullable). See the matching block in schema.sql.
+alter table catering_orders add column if not exists mismatch_alerted_at timestamptz;
+alter table catering_orders add column if not exists owner_email_claimed_at timestamptz;
+alter table catering_orders add column if not exists customer_email_claimed_at timestamptz;
+
 -- Same lock-down as the other tables: RLS on, no policies, no public API access.
 alter table catering_orders enable row level security;
 revoke all on catering_orders from anon, authenticated;

@@ -144,7 +144,11 @@ function parseGit(tokens, gitIndex, cwd) {
     }
   }
   if (risky) {
-    const isPush = tokens.slice(i).some((t) => t.value.toLowerCase() === 'push')
+    // `-c alias.x=push x` and `-c alias.x="!git push" x` count as pushes too.
+    const isPush = tokens.slice(i).some((t) => {
+      const v = t.value.toLowerCase()
+      return v === 'push' || v === 'send-pack' || (/^alias\./.test(v) && /\b(push|send-pack)\b/.test(v))
+    })
     return { sub: isPush ? 'push' : 'unknown', args: [], dir, risky }
   }
   return { sub: (tokens[i]?.value || '').toLowerCase(), args: tokens.slice(i + 1), dir, risky }
@@ -205,18 +209,197 @@ function pushTargetsMain(args, dir, stateChanged) {
   return null
 }
 
-/** Returns { found, reason }: whether the command pushes, and why it may reach main. */
-function analysePushes(command, cwd) {
+// ------------------------------------------------------------------ command text analysis
+
+const GIT_PUSH_RE = /\bgit(?:\.exe)?\b[\s\S]*\b(?:push|send-pack)\b/i
+const GH_MUTATE_RE = /\bgh(?:\.exe)?\s+(?:api\b[\s\S]*?(?:\s-X|\s--method|\s-[fF]|\s--field|\s--raw-field|\s--input)|repo\s+sync\b)/i
+const SHELL_WORD = /(?:^|[\s|;&(])(?:bash|sh|zsh|dash|ksh|fish|cmd|powershell|pwsh|iex|invoke-expression|python3?|node|ruby|perl|php|eval|source|xargs|ssh|wsl)(?=\s|$)/i
+const INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'powershell', 'pwsh', 'iex', 'invoke-expression', 'python', 'python3', 'node', 'source', 'eval', 'wsl'])
+// Commands whose quoted arguments are plain text (printed, written or searched), not run.
+const TEXT_COMMANDS = new Set(['echo', 'printf', 'write-output', 'write-host', 'write-error', 'set-content', 'add-content', 'out-file', 'tee', 'cat', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'select-string', 'sls', 'findstr'])
+const MESSAGE_OPTION = /^(?:-[a-zA-Z]*m|--message|--body|--title|--notes|--description)$/
+const MESSAGE_ATTACHED = /^(?:-[a-zA-Z]*m|--message=|--body=|--title=|--notes=)["']/
+
+/**
+ * Removes here-document bodies (<<EOF ... EOF, also inside $( ) in quotes) and PowerShell
+ * here-strings (@' ... '@) from a command, so text written to a file or passed as a commit
+ * message is not read as commands. Returns the remaining command and the removed bodies.
+ */
+function maskHeredocs(command) {
+  const bodies = []
+  const stack = ['top']
+  let pending = []
+  let out = ''
+  let i = 0
+  let lineStart = 0
+  const n = command.length
+  while (i < n) {
+    const ctx = stack[stack.length - 1]
+    const ch = command[i]
+    if (ch === '\n') {
+      out += ch
+      const intro = command.slice(lineStart, i)
+      i += 1
+      if (pending.length && (ctx === 'top' || ctx === 'sub')) {
+        for (const delim of pending) {
+          let body = ''
+          while (i < n) {
+            let end = command.indexOf('\n', i)
+            if (end < 0) end = n
+            const line = command.slice(i, end)
+            i = Math.min(end + 1, n)
+            if (line.trim() === delim) break
+            body += line + '\n'
+          }
+          bodies.push({ text: body, intro, whole: false })
+        }
+        pending = []
+      }
+      lineStart = i
+      continue
+    }
+    if (ctx === 'sq') {
+      out += ch
+      i += 1
+      if (ch === "'") stack.pop()
+      continue
+    }
+    if (ctx === 'dq') {
+      if (ch === '"') { stack.pop(); out += ch; i += 1; continue }
+      if (ch === '$' && command[i + 1] === '(') { stack.push('sub'); out += '$('; i += 2; continue }
+      out += ch
+      i += 1
+      continue
+    }
+    // ctx is top or sub
+    if (ch === "'") { stack.push('sq'); out += ch; i += 1; continue }
+    if (ch === '"') { stack.push('dq'); out += ch; i += 1; continue }
+    if (ch === '$' && command[i + 1] === '(') { stack.push('sub'); out += '$('; i += 2; continue }
+    if (ch === ')' && ctx === 'sub') { stack.pop(); out += ch; i += 1; continue }
+    if (ch === '@' && (command[i + 1] === "'" || command[i + 1] === '"') && /^\r?\n/.test(command.slice(i + 2, i + 4))) {
+      const q = command[i + 1]
+      const endAt = command.indexOf(`\n${q}@`, i + 2)
+      bodies.push({ text: command.slice(i + 2, endAt < 0 ? n : endAt), intro: command.slice(lineStart, i), whole: true })
+      out += `${q}${q}`
+      if (endAt < 0) { i = n } else { i = endAt + 3; lineStart = endAt + 1 }
+      continue
+    }
+    if (ch === '<' && command[i + 1] === '<') {
+      if (command[i + 2] === '<') { out += '<<<'; i += 3; continue } // here-string, not a heredoc
+      const m = /^<<-?[ \t]*(?:'([^'\r\n]+)'|"([^"\r\n]+)"|\\?([A-Za-z0-9_.\-]+))/.exec(command.slice(i))
+      if (m) {
+        pending.push(m[1] || m[2] || m[3])
+        out += m[0]
+        i += m[0].length
+        continue
+      }
+    }
+    out += ch
+    i += 1
+  }
+  return { text: out, bodies }
+}
+
+const GIT_BUILTINS = new Set([
+  '', 'add', 'am', 'apply', 'archive', 'bisect', 'blame', 'branch', 'bundle', 'cat-file', 'check-attr', 'check-ignore', 'checkout',
+  'cherry', 'cherry-pick', 'clean', 'clone', 'commit', 'commit-tree', 'config', 'count-objects', 'credential', 'describe', 'diff',
+  'diff-index', 'diff-tree', 'difftool', 'fetch', 'for-each-ref', 'format-patch', 'fsck', 'gc', 'grep', 'hash-object', 'help',
+  'init', 'lfs', 'log', 'ls-files', 'ls-remote', 'ls-tree', 'maintenance', 'merge', 'mergetool', 'mv', 'name-rev', 'notes', 'prune',
+  'pull', 'read-tree', 'rebase', 'reflog', 'remote', 'repack', 'reset', 'restore', 'rev-list', 'rev-parse', 'revert', 'rm',
+  'shortlog', 'show', 'show-ref', 'sparse-checkout', 'stash', 'status', 'submodule', 'switch', 'symbolic-ref', 'tag', 'update-ref',
+  'var', 'version', 'whatchanged', 'worktree', 'write-tree',
+])
+
+/** Alias that expands to a push? Follows alias chains a few levels deep. */
+function aliasPushes(sub, args, dir, defs, depth = 0) {
+  const expansion = defs[sub] ?? (dir ? git(dir, ['config', '--get', `alias.${sub}`]) : null)
+  if (!expansion) return false
+  if (/\b(?:push|send-pack)\b/i.test(expansion)) return true
+  if (expansion.startsWith('!') && args.some((a) => /^(push|send-pack)$/i.test(a.value))) return true
+  const words = expansion.replace(/^!/, '').trim().split(/\s+/)
+  const next = ((words[0] === 'git' ? words[1] : words[0]) || '').toLowerCase()
+  if (next && depth < 4 && !GIT_BUILTINS.has(next)) return aliasPushes(next, args, dir, defs, depth + 1)
+  return false
+}
+
+/** True when the quoted token is plain text (a commit message, echoed or searched text), not a nested command. */
+function isTextToken(tokens, index) {
+  const token = tokens[index]
+  const head = commandName(tokens[0])
+  const prev = index > 0 ? tokens[index - 1].value : ''
+  const isMessage =
+    MESSAGE_OPTION.test(prev) || MESSAGE_ATTACHED.test(token.raw) || (head === 'gh' && /^-[bt]$/.test(prev)) || TEXT_COMMANDS.has(head)
+  if (!isMessage) return false
+  // Double quotes can still run $( ) or `...`; heredoc bodies were already removed from the text.
+  if (token.raw.includes('"') && /\$\(|`/.test(token.raw)) return false
+  return true
+}
+
+/** Reason string if this `gh` call changes the repository through the API, otherwise null. */
+function ghMutationReason(tokens, g) {
+  const sub = (tokens[g + 1]?.value || '').toLowerCase()
+  const rest = tokens.slice(g + 2).map((t) => t.value)
+  if (sub === 'repo' && (rest[0] || '').toLowerCase() === 'sync') return 'gh repo sync updates a branch of the repository'
+  if (sub !== 'api') return null
+  let method = null
+  let hasField = false
+  for (let k = 0; k < rest.length; k++) {
+    const v = rest[k]
+    const attached = /^(?:-X=?|--method=)(.+)$/i.exec(v)
+    if (/^(-X|--method)$/i.test(v)) method = rest[k + 1] ?? ''
+    else if (attached) method = attached[1]
+    else if (/^-[fF]/.test(v) || /^--(field|raw-field|input)\b/.test(v)) hasField = true
+  }
+  const mutating = method !== null ? !/^(get|head)$/i.test(method) : hasField
+  return mutating ? 'gh api with a method other than GET (or with fields) can change the repository' : null
+}
+
+/** Returns { found, reason, gh }: whether the command pushes, why it may reach main, and any gh API mutation. */
+function analysePushes(rawCommand, cwd) {
+  const { text: command, bodies } = maskHeredocs(rawCommand)
   let stateChanged = false
   let found = false
+  let gh = null
+  let exemptedPushText = false
+  const aliasDefs = {}
+
+  // Heredoc / here-string bodies only count when something feeds them to a shell.
+  for (const body of bodies) {
+    const fed = body.whole ? SHELL_WORD.test(command) : SHELL_WORD.test(body.intro)
+    if (!fed) continue
+    if (GIT_PUSH_RE.test(body.text)) return { found: true, reason: 'a script fed to a shell runs git push, which cannot be checked', gh }
+    if (GH_MUTATE_RE.test(body.text)) gh = 'a script fed to a shell changes the repository through gh'
+  }
+
   for (const segment of splitSegments(command)) {
     const tokens = tokenize(segment)
     if (!tokens.length) continue
-    if (DIR_CHANGERS.has(commandName(tokens[0]))) stateChanged = true
+    const head = commandName(tokens[0])
+    if (DIR_CHANGERS.has(head)) stateChanged = true
+    if (exemptedPushText && INTERPRETERS.has(head)) {
+      return { found: true, reason: 'text containing git push is piped into a shell', gh }
+    }
 
     // bash -c "git push ...", powershell -Command "git push ...", and similar.
-    if (tokens.some((t) => t.quoted && /\bgit(\.exe)?\b[\s\S]*\bpush\b/i.test(t.value))) {
-      return { found: true, reason: 'a nested shell runs git push, which cannot be checked' }
+    // Quoted commit messages, echoed text and search patterns are plain text and are skipped.
+    for (let t = 0; t < tokens.length; t++) {
+      if (!tokens[t].quoted) continue
+      const value = tokens[t].value
+      const hitsGit = GIT_PUSH_RE.test(value)
+      const hitsGh = GH_MUTATE_RE.test(value)
+      if (!hitsGit && !hitsGh) continue
+      if (isTextToken(tokens, t)) { if (hitsGit) exemptedPushText = true; continue }
+      if (hitsGit) return { found: true, reason: 'a nested shell runs git push, which cannot be checked', gh }
+      gh = 'a nested shell changes the repository through gh'
+    }
+
+    const ghIndex = tokens.findIndex((t) => /^gh(\.exe)?$/.test(commandName(t)))
+    if (ghIndex >= 0) gh = ghMutationReason(tokens, ghIndex) || gh
+
+    const dashed = tokens.find((t) => /^git-(push|send-pack)(\.exe)?$/.test(commandName(t)))
+    if (dashed) return { found: true, reason: `${commandName(dashed)} can update ${PROTECTED_BRANCH}`, gh }
+    if (tokens.some((t) => /^git-subtree(\.exe)?$/.test(commandName(t))) && tokens.some((t) => t.value.toLowerCase() === 'push')) {
+      return { found: true, reason: 'git subtree push can update main', gh }
     }
 
     const gitIndex = tokens.findIndex(isGit)
@@ -224,16 +407,28 @@ function analysePushes(command, cwd) {
     const parsed = parseGit(tokens, gitIndex, cwd)
     if (parsed.sub !== 'push') {
       if (BRANCH_CHANGERS.has(parsed.sub)) stateChanged = true
+      if (parsed.sub === 'config') {
+        parsed.args.forEach((a, k) => {
+          const m = /^alias\.(.+)$/i.exec(a.value)
+          if (m && parsed.args[k + 1]) aliasDefs[m[1].toLowerCase()] = parsed.args[k + 1].value
+        })
+      } else if (parsed.sub === 'send-pack') {
+        return { found: true, reason: 'git send-pack can update main', gh }
+      } else if (parsed.sub === 'subtree' && parsed.args.some((a) => a.value.toLowerCase() === 'push')) {
+        return { found: true, reason: 'git subtree push can update main', gh }
+      } else if (parsed.sub && !GIT_BUILTINS.has(parsed.sub) && !parsed.risky && aliasPushes(parsed.sub, parsed.args, parsed.dir, aliasDefs)) {
+        return { found: true, reason: `the git alias "${parsed.sub}" expands to a push`, gh }
+      }
       continue
     }
     found = true
     if (parsed.risky) {
-      return { found, reason: 'git options before push (-c, --git-dir, --work-tree, ...) can change where it pushes' }
+      return { found, reason: 'git options before push (-c, --git-dir, --work-tree, ...) can change where it pushes', gh }
     }
     const reason = pushTargetsMain(parsed.args, parsed.dir, stateChanged)
-    if (reason) return { found, reason }
+    if (reason) return { found, reason, gh }
   }
-  return { found, reason: null }
+  return { found, reason: null, gh }
 }
 
 const GH_PR_MERGE = /(^|[\s;&|(])gh(\.exe)?\s+pr\s+merge(?=\s|$|[;&|)])/i
@@ -245,6 +440,77 @@ const ENV_TOKEN = /(?:^|[\s"'=\\/:<>|;&(])(\.env[\w.\-]*)/gi
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'findstr', 'select-string', 'sls'])
 const READERS = new Set(['cat', 'type', 'gc', 'get-content', 'head', 'tail', 'less', 'more', 'strings', 'select-string', 'sls', 'grep', 'rg', 'findstr'])
 const LISTERS = new Set(['get-childitem', 'gci', 'dir', 'ls'])
+
+const GREP_VALUE_OPTS = new Set(['-m', '--max-count', '-A', '-B', '-C', '--after-context', '--before-context', '--context', '--include', '--exclude', '--exclude-dir', '--label', '-d', '--directories', '-D', '--devices', '-t', '-T', '--type', '--type-not', '--type-add', '-j', '--threads', '-M', '--max-columns', '--max-depth', '--color', '--colour'])
+const SLS_VALUE_OPTS = new Set(['include', 'exclude', 'encoding', 'context', 'culture', 'inputobject'])
+
+/** Path and glob arguments of a Select-String call: the pattern is not one. */
+function selectStringPaths(args) {
+  const out = []
+  let patternGiven = false
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k]
+    const opt = /^-([a-z]+)(?::(.*))?$/i.exec(a)
+    if (opt) {
+      const name = opt[1].toLowerCase()
+      const attached = opt[2]
+      if (name.length >= 4 && 'pattern'.startsWith(name)) {
+        patternGiven = true
+        if (attached === undefined) k += 1
+      } else if (name === 'path' || (name.length >= 3 && 'literalpath'.startsWith(name))) {
+        const value = attached !== undefined ? attached : args[++k]
+        if (value !== undefined) out.push(...value.split(','))
+      } else if (SLS_VALUE_OPTS.has(name) && attached === undefined) {
+        k += 1
+      }
+      continue // other options are switches (-NotMatch, -SimpleMatch, -CaseSensitive, ...)
+    }
+    if (!patternGiven) patternGiven = true // the first positional argument is the pattern
+    else out.push(...a.split(','))
+  }
+  return out
+}
+
+/** Path and glob arguments of grep, rg, findstr and similar: the pattern is not one. */
+function grepStylePaths(name, args) {
+  const out = []
+  let patternGiven = false
+  let literal = false
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k]
+    if (!literal && a === '--') { literal = true; continue }
+    if (!literal && a.startsWith('--')) {
+      const eq = a.indexOf('=')
+      const key = eq < 0 ? a : a.slice(0, eq)
+      const attached = eq < 0 ? undefined : a.slice(eq + 1)
+      if (key === '--regexp' || key === '--file') { patternGiven = true; if (attached === undefined) k += 1 }
+      else if (key === '--glob' || key === '--iglob') { const v = attached !== undefined ? attached : args[++k]; if (v !== undefined) out.push(v) }
+      else if (GREP_VALUE_OPTS.has(key) && attached === undefined) k += 1
+      continue
+    }
+    if (!literal && a.length > 1 && a.startsWith('-') && !/^-\d+$/.test(a)) {
+      const last = /^-[a-zA-Z0-9]*([a-zA-Z])$/.exec(a)?.[1]
+      if (last === 'e' || last === 'f') { patternGiven = true; k += 1 }
+      else if (last === 'g' && name === 'rg') { if (args[k + 1] !== undefined) out.push(args[k + 1]); k += 1 }
+      else if (last && /^[mABCtTjMdD]$/.test(last) && a.length === 2) k += 1
+      continue
+    }
+    if (!literal && name === 'findstr' && /^\/[a-z](:.*)?$/i.test(a)) {
+      if (/^\/[cg]:/i.test(a)) patternGiven = true
+      continue
+    }
+    if (!patternGiven) patternGiven = true // the first non-option argument is the pattern
+    else out.push(a)
+  }
+  return out
+}
+
+/** Arguments that may be file paths or globs (a search pattern is left out). */
+function pathArgs(name, args) {
+  if (name === 'select-string' || name === 'sls') return selectStringPaths(args)
+  if (SEARCHERS.has(name)) return grepStylePaths(name, args)
+  return args.filter((a) => !a.startsWith('-'))
+}
 
 function envFileReason(command) {
   for (const m of command.matchAll(ENV_TOKEN)) {
@@ -263,7 +529,8 @@ function envFileReason(command) {
   for (const tokens of segments) {
     const name = commandName(tokens[0])
     const args = tokens.slice(1).map((t) => t.value)
-    if (READERS.has(name) && args.some((a) => !a.startsWith('-') && globMayHitEnv(a))) return BROAD_READ_MESSAGE
+    const paths = pathArgs(name, args)
+    if (READERS.has(name) && paths.some((a) => !a.startsWith('-') && globMayHitEnv(a))) return BROAD_READ_MESSAGE
     if (SEARCHERS.has(name)) {
       if ((name === 'grep' || name === 'egrep' || name === 'fgrep') &&
           args.some((a) => /^-[a-zA-Z]*[rR]/.test(a) || a === '--recursive' || a === '--dereference-recursive' || /^--directories=recurse$/.test(a))) {
@@ -271,7 +538,7 @@ function envFileReason(command) {
       }
       if (name === 'rg' && args.some((a) => /^-[a-zA-Z.]*(u|\.)/.test(a) || a === '--hidden' || /^--no-ignore/.test(a))) return BROAD_READ_MESSAGE
       if (name === 'findstr' && args.some((a) => /^\/s$/i.test(a))) return BROAD_READ_MESSAGE
-      if ((name === 'select-string' || name === 'sls') && args.some((a) => hasWildcard(a))) return BROAD_READ_MESSAGE
+      if ((name === 'select-string' || name === 'sls') && paths.some((a) => hasWildcard(a))) return BROAD_READ_MESSAGE
     }
     if (LISTERS.has(name) && args.some((a) => /^-(r|recurse|force)$/i.test(a))) recursiveListing = true
     if (READERS.has(name) && tokens !== segments[0]) readerInPipeline = true
@@ -315,6 +582,7 @@ function checkCommand(rawCommand, input) {
   const pushes = analysePushes(command, cwd)
   if (pushes.found && input.agent_id) return { block: SUBAGENT_PUSH_MESSAGE }
 
+  if (pushes.gh) return { ask: `${pushes.gh}. Eli, approve only if you consent.` }
   if (GH_PR_MERGE.test(command) || GH_API_MERGE.test(command)) {
     return { ask: `Merging through gh usually updates ${PROTECTED_BRANCH}. Eli, approve only if you consent.` }
   }

@@ -14,7 +14,7 @@ const maya = require('./maya')
 const mailer = require('./mailer')
 const { helpers } = require('./payments')
 
-const { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner } = helpers
+const { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner, claimMismatchAlert, releaseMismatchAlert } = helpers
 const MAX_EMAIL_ATTEMPTS = 5
 const log = (...args) => console.log('[catering-payments]', ...args)
 
@@ -59,12 +59,15 @@ async function reconcileOrder(orderId) {
     if (centavos !== order.amount_due_centavos || (currency && currency !== 'PHP')) {
       await recordAudit(orderId, paid, false)
       const deposit = order.payment_type === 'DEPOSIT' ? ` (down payment; order total PHP ${(order.total_centavos / 100).toFixed(2)})` : ''
-      await alertOwner(`Payment mismatch — catering order ${order.reference}`, [
-        'Maya reports a successful payment, but it does not match our record. The order was NOT confirmed.',
-        `Order: ${order.reference} (${order.package_name})`,
-        `Expected amount due: PHP ${(order.amount_due_centavos / 100).toFixed(2)}${deposit} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
-        'Please check this payment in Maya Manager before doing anything else.',
-      ])
+      if (await claimMismatchAlert('catering_orders', orderId)) {
+        const sent = await alertOwner(`Payment mismatch — catering order ${order.reference}`, [
+          'Maya reports a successful payment, but it does not match our record. The order was NOT confirmed.',
+          `Order: ${order.reference} (${order.package_name})`,
+          `Expected amount due: PHP ${(order.amount_due_centavos / 100).toFixed(2)}${deposit} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
+          'Please check this payment in Maya Manager before doing anything else.',
+        ])
+        if (!sent) await releaseMismatchAlert('catering_orders', orderId)
+      }
       return order
     }
     await recordAudit(orderId, paid, true)
@@ -80,13 +83,17 @@ async function reconcileOrder(orderId) {
     PAYMENT_CANCELLED: 'CANCELLED',
     PAYMENT_EXPIRED: 'EXPIRED',
   }[status]
+  // In-flight statuses never pull a finished order back to PAYMENT_PROCESSING.
+  // Paid-after-expiry goes through confirmOrder() above, which is unchanged.
+  const inFlight = status === 'PAYMENT_PROCESSING' || status === 'AUTHORIZED'
   if (mapping) {
     await db
       .query(
         `update catering_orders set status = $2, maya_status = $3,
            maya_payment_id = coalesce(maya_payment_id, $4)
-         where id = $1 and status <> 'CONFIRMED'`,
-        [orderId, mapping, status, latest?.id ? String(latest.id) : null],
+         where id = $1 and status <> 'CONFIRMED'
+           and (not $5::boolean or status not in ('EXPIRED', 'CANCELLED', 'PAYMENT_FAILED'))`,
+        [orderId, mapping, status, latest?.id ? String(latest.id) : null, inFlight],
       )
       .catch((error) => console.error('[catering-payments] state update failed:', error.message))
   }
@@ -141,20 +148,32 @@ async function dispatchEmails(orderId) {
   const order = await getOrder(orderId)
   if (!order || order.status !== 'CONFIRMED' || order.email_attempts >= MAX_EMAIL_ATTEMPTS) return
 
-  const attempt = async (column, send) => {
-    if (order[column] === 'SENT') return
+  // Claim each email before sending (see lib/payments.js dispatchEmails).
+  let counted = false
+  const attempt = async (column, claimColumn, send) => {
+    const { rows } = await db.query(
+      `update catering_orders set ${claimColumn} = now()
+        where id = $1 and ${column} <> 'SENT'
+          and (${claimColumn} is null or ${claimColumn} < now() - interval '10 minutes')
+        returning id`,
+      [orderId],
+    )
+    if (rows.length === 0) return
+    if (!counted) {
+      counted = true
+      await db.query('update catering_orders set email_attempts = email_attempts + 1 where id = $1', [orderId])
+    }
     try {
       await send(order)
-      await db.query(`update catering_orders set ${column} = 'SENT' where id = $1`, [orderId])
+      await db.query(`update catering_orders set ${column} = 'SENT', ${claimColumn} = null where id = $1`, [orderId])
     } catch (error) {
       console.error(`[catering-payments] ${column} failed:`, error.message)
-      await db.query(`update catering_orders set ${column} = 'FAILED' where id = $1`, [orderId])
+      await db.query(`update catering_orders set ${column} = 'FAILED', ${claimColumn} = null where id = $1`, [orderId])
     }
   }
 
-  await db.query('update catering_orders set email_attempts = email_attempts + 1 where id = $1', [orderId])
-  await attempt('owner_email_status', mailer.sendCateringConfirmedToOwner)
-  await attempt('customer_email_status', mailer.sendCateringConfirmationToCustomer)
+  await attempt('owner_email_status', 'owner_email_claimed_at', mailer.sendCateringConfirmedToOwner)
+  await attempt('customer_email_status', 'customer_email_claimed_at', mailer.sendCateringConfirmationToCustomer)
 }
 
 /** Background housekeeping for catering orders (called from payments.sweep). */

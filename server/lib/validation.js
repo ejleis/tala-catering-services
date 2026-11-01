@@ -32,25 +32,36 @@ function str(value, maxLength) {
   return value.trim().slice(0, maxLength)
 }
 
+/**
+ * Strict whole-number parsing: a JS integer, or a string of digits only
+ * (surrounding whitespace allowed). Arrays, "60abc", "1.9e5", "1.5", "-3" -> null.
+ */
 function int(value, { min, max }) {
-  const parsed = Number.parseInt(value, 10)
-  if (!Number.isFinite(parsed)) return null
+  let parsed
+  if (typeof value === 'number') parsed = value
+  else if (typeof value === 'string' && /^\d+$/.test(value.trim())) parsed = Number(value.trim())
+  else return null
+  if (!Number.isInteger(parsed) || !Number.isSafeInteger(parsed)) return null
   if (parsed < min || parsed > max) return null
   return parsed
 }
 
+/** A real calendar date in YYYY-MM-DD form (rejects 2027-02-30 by round-tripping). */
 function isValidDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const date = new Date(`${value}T00:00:00Z`)
-  return !Number.isNaN(date.getTime())
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
 
-function isFutureDate(value) {
+/** Today's calendar date in Asia/Manila (the business's day), as YYYY-MM-DD. */
+function manilaToday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+}
+
+/** Today or later by the Manila calendar. ISO dates compare correctly as strings. */
+function isFutureDate(value, now = new Date()) {
   if (!isValidDate(value)) return false
-  const date = new Date(`${value}T00:00:00Z`)
-  const today = new Date()
-  today.setUTCHours(0, 0, 0, 0)
-  return date >= today
+  return value >= manilaToday(now)
 }
 
 /**
@@ -180,4 +191,4 @@ function validateCateringOrder(body) {
   return { data, errors }
 }
 
-module.exports = { validateInquiry, validateBooking, validateCateringOrder, pesosToCentavos, deFormula, LIMITS }
+module.exports = { isValidDate, isFutureDate, manilaToday, int, validateInquiry, validateBooking, validateCateringOrder, pesosToCentavos, deFormula, LIMITS }

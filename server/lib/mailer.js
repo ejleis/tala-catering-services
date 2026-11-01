@@ -73,19 +73,29 @@ async function sendInquiryToOwner(data) {
   if (error) throw new Error(`Resend: failed to send owner notification (${error.message ?? error.name})`)
 }
 
+const INQUIRY_ACK_SUBJECT = "We received your inquiry — Tala's Event Catering Services"
+
+/**
+ * The customer acknowledgement is a FIXED message. It must never contain any
+ * text taken from the request (name, event type, message...), otherwise the
+ * contact form could be used to send attacker-chosen text to any address.
+ */
+function buildInquiryAcknowledgementHtml() {
+  return `
+      <p>Thank you for contacting Tala's Event Catering Services.</p>
+      <p>We have received your inquiry. Our team will review it and contact you with
+      availability and further details.</p>
+      <p>If you did not submit this inquiry, please disregard this message.</p>
+      <p>Tala's Event Catering Services</p>
+    `
+}
+
 async function sendInquiryAcknowledgement(data) {
   const { error } = await resend.emails.send({
     from: process.env.MAIL_FROM,
-    to: safeHeader(data.email),
-    subject: "We received your inquiry — Tala's Event Catering Services",
-    html: `
-      <p>Hi ${escapeHtml(data.name)},</p>
-      <p>Thank you for your inquiry. Your request has been sent to our team and we will contact
-      you shortly with availability and further details.</p>
-      <p><strong>Event:</strong> ${escapeHtml(data.eventType)} on ${escapeHtml(data.eventDate)}<br>
-      <strong>Estimated guests:</strong> ${escapeHtml(data.guestCount)}</p>
-      <p>— Tala's Event Catering Services</p>
-    `,
+    to: safeHeader(data.email), // the recipient is the only request-supplied value used
+    subject: INQUIRY_ACK_SUBJECT,
+    html: buildInquiryAcknowledgementHtml(),
   })
 
   if (error) throw new Error(`Resend: failed to send acknowledgement (${error.message ?? error.name})`)
@@ -246,6 +256,8 @@ module.exports = {
   sendCateringConfirmedToOwner,
   sendCateringConfirmationToCustomer,
   sendOwnerAlert,
+  buildInquiryAcknowledgementHtml,
+  INQUIRY_ACK_SUBJECT,
   escapeHtml,
   safeHeader,
 }

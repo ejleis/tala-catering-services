@@ -3,8 +3,16 @@ dist
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+!**/.env.example
 *.log
 .DS_Store
+
+# Certificates and private keys must never be committed
+*.pem
+*.key
+*.crt
 
 # Claude Code local-only files
 CLAUDE.local.md

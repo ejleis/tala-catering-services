@@ -1,34 +1,48 @@
 -- Tala's Event Catering Services — hotel booking + Maya payments
--- Run once in Supabase: SQL Editor -> New query -> paste -> Run.
+-- Run in Supabase: SQL Editor -> New query -> paste -> Run.
+-- Safe to re-run on an existing database and on a fresh one: every statement is guarded.
 
 create extension if not exists pgcrypto;
 
 -- ---------- Enumerated states ----------
-create type booking_status as enum (
-  'PENDING_PAYMENT',     -- created, guest sent to Maya
-  'PAYMENT_PROCESSING',  -- Maya reports in-flight
-  'CONFIRMED',           -- payment verified by server
-  'PAYMENT_FAILED',
-  'CANCELLED',
-  'EXPIRED'              -- checkout window lapsed unpaid
-);
+do $$ begin
+  create type booking_status as enum (
+    'PENDING_PAYMENT',     -- created, guest sent to Maya
+    'PAYMENT_PROCESSING',  -- Maya reports in-flight
+    'CONFIRMED',           -- payment verified by server
+    'PAYMENT_FAILED',
+    'CANCELLED',
+    'EXPIRED'              -- checkout window lapsed unpaid
+  );
+exception when duplicate_object then null;
+end $$;
 
-create type payment_status as enum (
-  'PENDING', 'PROCESSING', 'PAID', 'FAILED', 'CANCELLED', 'EXPIRED', 'REFUNDED'
-);
+do $$ begin
+  create type payment_status as enum (
+    'PENDING', 'PROCESSING', 'PAID', 'FAILED', 'CANCELLED', 'EXPIRED', 'REFUNDED'
+  );
+exception when duplicate_object then null;
+end $$;
 
-create type email_status as enum ('PENDING', 'SENT', 'FAILED');
+do $$ begin
+  create type email_status as enum ('PENDING', 'SENT', 'FAILED');
+exception when duplicate_object then null;
+end $$;
 
 -- ---------- Shared updated_at trigger ----------
+-- search_path is pinned (Supabase advisor "function_search_path_mutable"); now() lives in pg_catalog,
+-- which is always searched, so the body still resolves.
 create or replace function set_updated_at() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = ''
+as $$
 begin
   new.updated_at := now();
   return new;
 end $$;
 
 -- ---------- bookings ----------
-create table bookings (
+create table if not exists bookings (
   id               uuid primary key default gen_random_uuid(),  -- also Maya requestReferenceNumber (36 chars)
   reference        text not null unique,                        -- human-readable, e.g. HB-20261011-4821
   hotel_slug       text not null,
@@ -61,16 +75,17 @@ create table bookings (
   constraint total_adds_up check (total_centavos = subtotal_centavos + tax_centavos)
 );
 
-create index bookings_status_expires_idx on bookings (status, expires_at);
-create index bookings_room_dates_idx     on bookings (hotel_slug, room_id, check_in, check_out)
+create index if not exists bookings_status_expires_idx on bookings (status, expires_at);
+create index if not exists bookings_room_dates_idx     on bookings (hotel_slug, room_id, check_in, check_out)
   where status in ('PENDING_PAYMENT', 'PAYMENT_PROCESSING', 'CONFIRMED');
-create index bookings_guest_email_idx    on bookings (lower(guest_email));
+create index if not exists bookings_guest_email_idx    on bookings (lower(guest_email));
 
+drop trigger if exists bookings_updated_at on bookings;
 create trigger bookings_updated_at before update on bookings
   for each row execute function set_updated_at();
 
 -- ---------- payments (one booking may have several attempts) ----------
-create table payments (
+create table if not exists payments (
   id                       uuid primary key default gen_random_uuid(),
   booking_id               uuid not null references bookings(id) on delete restrict,
   provider                 text not null default 'maya',
@@ -88,16 +103,17 @@ create table payments (
   updated_at               timestamptz not null default now()
 );
 
-create index payments_booking_idx on payments (booking_id);
-create index payments_ref_idx     on payments (request_reference_number);
+create index if not exists payments_booking_idx on payments (booking_id);
+create index if not exists payments_ref_idx     on payments (request_reference_number);
 -- A booking can have at most one PAID payment.
-create unique index payments_one_paid_per_booking on payments (booking_id) where status = 'PAID';
+create unique index if not exists payments_one_paid_per_booking on payments (booking_id) where status = 'PAID';
 
+drop trigger if exists payments_updated_at on payments;
 create trigger payments_updated_at before update on payments
   for each row execute function set_updated_at();
 
 -- ---------- webhook_events (idempotency + audit; body is untrusted, kept as-is) ----------
-create table webhook_events (
+create table if not exists webhook_events (
   id               bigint generated always as identity primary key,
   maya_payment_id  text,
   payment_status   text,
@@ -108,7 +124,17 @@ create table webhook_events (
   processed_at     timestamptz
 );
 
-create index webhook_events_payment_idx on webhook_events (maya_payment_id, received_at);
+create index if not exists webhook_events_payment_idx on webhook_events (maya_payment_id, received_at);
+
+-- ---------- Hardening columns (additive, nullable; guarded so re-runs are safe) ----------
+-- mismatch_alerted_at: set the first time an amount-mismatch owner alert is sent, so the owner
+--   is emailed once per booking instead of on every reconcile.
+-- owner_email_claimed_at / guest_email_claimed_at: an email is "claimed" before it is sent so two
+--   overlapping dispatch runs cannot both send it. A claim older than 10 minutes (a crashed send)
+--   is treated as abandoned and is retried by the sweep.
+alter table bookings add column if not exists mismatch_alerted_at timestamptz;
+alter table bookings add column if not exists owner_email_claimed_at timestamptz;
+alter table bookings add column if not exists guest_email_claimed_at timestamptz;
 
 -- ---------- Lock the tables from Supabase's public API ----------
 -- RLS on, no policies => anon/authenticated keys can read or write nothing.

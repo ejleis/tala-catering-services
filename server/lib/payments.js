@@ -44,12 +44,37 @@ function pickCurrency(payment) {
   return value ? String(value).toUpperCase() : null
 }
 
+/** Returns true if the alert was handed to the mailer, false if sending failed. */
 async function alertOwner(subject, lines) {
   try {
     await mailer.sendOwnerAlert(subject, lines)
+    return true
   } catch (error) {
     console.error('[payments] could not send owner alert:', error.message)
+    return false
   }
+}
+
+const MISMATCH_TABLES = new Set(['bookings', 'catering_orders'])
+
+/**
+ * Atomically claims the single mismatch alert for a row. Only the caller that
+ * flips mismatch_alerted_at from null gets true, so repeated reconciles (and
+ * overlapping ones) email the owner once. The audit row is still written every time.
+ */
+async function claimMismatchAlert(table, id) {
+  if (!MISMATCH_TABLES.has(table)) throw new Error('invalid table')
+  const { rows } = await db.query(
+    `update ${table} set mismatch_alerted_at = now() where id = $1 and mismatch_alerted_at is null returning id`,
+    [id],
+  )
+  return rows.length > 0
+}
+
+/** Gives the claim back if the alert email could not be sent, so a later reconcile retries it. */
+async function releaseMismatchAlert(table, id) {
+  if (!MISMATCH_TABLES.has(table)) throw new Error('invalid table')
+  await db.query(`update ${table} set mismatch_alerted_at = null where id = $1`, [id]).catch(() => {})
 }
 
 async function getBooking(id) {
@@ -96,12 +121,15 @@ async function reconcile(bookingId) {
     const currency = pickCurrency(paid)
     if (centavos !== booking.total_centavos || (currency && currency !== 'PHP')) {
       await recordAudit(bookingId, paid, false)
-      await alertOwner(`Payment mismatch — booking ${booking.reference}`, [
-        `Maya reports a successful payment, but it does not match our record. The booking was NOT confirmed.`,
-        `Booking: ${booking.reference} (${booking.hotel_name})`,
-        `Expected: PHP ${(booking.total_centavos / 100).toFixed(2)} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
-        `Please check this payment in Maya Manager before doing anything else.`,
-      ])
+      if (await claimMismatchAlert('bookings', bookingId)) {
+        const sent = await alertOwner(`Payment mismatch — booking ${booking.reference}`, [
+          `Maya reports a successful payment, but it does not match our record. The booking was NOT confirmed.`,
+          `Booking: ${booking.reference} (${booking.hotel_name})`,
+          `Expected: PHP ${(booking.total_centavos / 100).toFixed(2)} — Maya reported: ${centavos === null ? 'unreadable amount' : (centavos / 100).toFixed(2)} ${currency ?? ''}`,
+          `Please check this payment in Maya Manager before doing anything else.`,
+        ])
+        if (!sent) await releaseMismatchAlert('bookings', bookingId)
+      }
       return booking
     }
     await recordAudit(bookingId, paid, true)
@@ -111,6 +139,10 @@ async function reconcile(bookingId) {
   // Not paid: reflect failures / progress, but never regress a confirmed booking.
   const latest = mine[mine.length - 1]
   const status = pickStatus(latest)
+  // In-flight statuses must never pull a finished record back to PAYMENT_PROCESSING
+  // (e.g. a stale "processing" report after the booking expired). Paid-after-expiry
+  // does not come through here: it goes to confirmBooking() above, which is unchanged.
+  const inFlight = status === 'PAYMENT_PROCESSING' || status === 'AUTHORIZED'
   const mapping = {
     PAYMENT_PROCESSING: ['PROCESSING', 'PAYMENT_PROCESSING'],
     AUTHORIZED: ['PROCESSING', 'PAYMENT_PROCESSING'],
@@ -124,12 +156,14 @@ async function reconcile(bookingId) {
       await client.query(
         `update payments set status = $2, maya_status = $3,
            maya_payment_id = coalesce(maya_payment_id, $4)
-         where booking_id = $1 and status <> 'PAID'`,
-        [bookingId, paymentStatus, status, latest?.id ? String(latest.id) : null],
+         where booking_id = $1 and status <> 'PAID'
+           and (not $5::boolean or status not in ('FAILED', 'CANCELLED', 'EXPIRED', 'REFUNDED'))`,
+        [bookingId, paymentStatus, status, latest?.id ? String(latest.id) : null, inFlight],
       )
       await client.query(
-        `update bookings set status = $2 where id = $1 and status not in ('CONFIRMED')`,
-        [bookingId, bookingStatus],
+        `update bookings set status = $2 where id = $1 and status not in ('CONFIRMED')
+           and (not $3::boolean or status not in ('EXPIRED', 'CANCELLED', 'PAYMENT_FAILED'))`,
+        [bookingId, bookingStatus, inFlight],
       )
     }).catch((error) => console.error('[payments] state update failed:', error.message))
   }
@@ -192,20 +226,34 @@ async function dispatchEmails(bookingId) {
   )
   const full = { ...booking, receipt_number: rows[0]?.receipt_number }
 
-  const attempt = async (column, send) => {
-    if (booking[column] === 'SENT') return
+  // Claim each email before sending so overlapping runs cannot both send it. The
+  // claim is a timestamp; one older than 10 minutes means the sender crashed, so
+  // it is retried. The status column stays PENDING/FAILED until the send is done.
+  let counted = false
+  const attempt = async (column, claimColumn, send) => {
+    const { rows } = await db.query(
+      `update bookings set ${claimColumn} = now()
+        where id = $1 and ${column} <> 'SENT'
+          and (${claimColumn} is null or ${claimColumn} < now() - interval '10 minutes')
+        returning id`,
+      [bookingId],
+    )
+    if (rows.length === 0) return // already sent, or another run is sending it
+    if (!counted) {
+      counted = true
+      await db.query('update bookings set email_attempts = email_attempts + 1 where id = $1', [bookingId])
+    }
     try {
       await send(full)
-      await db.query(`update bookings set ${column} = 'SENT' where id = $1`, [bookingId])
+      await db.query(`update bookings set ${column} = 'SENT', ${claimColumn} = null where id = $1`, [bookingId])
     } catch (error) {
       console.error(`[payments] ${column} failed:`, error.message)
-      await db.query(`update bookings set ${column} = 'FAILED' where id = $1`, [bookingId])
+      await db.query(`update bookings set ${column} = 'FAILED', ${claimColumn} = null where id = $1`, [bookingId])
     }
   }
 
-  await db.query('update bookings set email_attempts = email_attempts + 1 where id = $1', [bookingId])
-  await attempt('owner_email_status', mailer.sendBookingConfirmedToOwner)
-  await attempt('guest_email_status', mailer.sendBookingConfirmationToGuest)
+  await attempt('owner_email_status', 'owner_email_claimed_at', mailer.sendBookingConfirmedToOwner)
+  await attempt('guest_email_status', 'guest_email_claimed_at', mailer.sendBookingConfirmationToGuest)
 }
 
 /** Background housekeeping: expire stale unpaid bookings, retry failed emails. */
@@ -266,5 +314,5 @@ function startSweeper() {
 module.exports = {
   reconcile, dispatchEmails, sweep, startSweeper, getBooking,
   // shared with lib/cateringPayments.js so both flows apply identical checks
-  helpers: { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner },
+  helpers: { PAID_STATUSES, pickStatus, pickCentavos, pickCurrency, alertOwner, claimMismatchAlert, releaseMismatchAlert },
 }

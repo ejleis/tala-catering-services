@@ -5,13 +5,13 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "test": "node --test --test-concurrency=1 test/payments.test.js test/catering.test.js test/testitem.test.js",
+    "test": "node --test --test-concurrency=1 test/unit.test.js test/payments.test.js test/catering.test.js test/testitem.test.js test/hardening.test.js",
     "fake-maya": "node test/fake-maya.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
+    "express": "^4.22.3",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "pg": "^8.23.1",

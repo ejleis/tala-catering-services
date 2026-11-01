@@ -70,9 +70,21 @@ app.use('/api/catering-orders', cateringRouter)
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 // Central error handler — never leak stack traces to clients.
+// body-parser errors carry the raw request body (err.body) and a client-error
+// status; answer those with 400/413 and log only the type and status, never the body.
 app.use((error, _req, res, _next) => {
-  console.error('[error]', error)
-  res.status(500).json({ message: 'Something went wrong. Please try again.' })
+  const status = Number(error?.status ?? error?.statusCode)
+  if (error?.type === 'entity.too.large' || status === 413) {
+    console.warn('[request] rejected: body too large (413)')
+    return res.status(413).json({ message: 'The request is too large.' })
+  }
+  if (error?.type === 'entity.parse.failed' || error?.type === 'encoding.unsupported' || error?.type === 'charset.unsupported' || status === 400) {
+    console.warn(`[request] rejected: ${String(error?.type ?? 'bad request').slice(0, 60)} (400)`)
+    return res.status(400).json({ message: 'The request could not be read. Please check it and try again.' })
+  }
+  // Unknown failure: log the message only (never the request body), generic reply.
+  console.error('[error]', error?.type ?? error?.name ?? 'Error', String(error?.message ?? '').slice(0, 300))
+  return res.status(500).json({ message: 'Something went wrong. Please try again.' })
 })
 
 module.exports = app

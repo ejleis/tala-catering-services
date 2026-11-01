@@ -45,7 +45,7 @@ Render's free tier has cold starts.
 - **Hotels:** three partner hotels, one room each: Swiss-Belhotel Blulane (Executive One-Bedroom Suite, ₱8,000/night), Bay Area Suites Manila (Superior One Bedroom Suite, ₱5,238/night), Red Hotel Cubao (Executive Suite, ₱6,533/night). Hotel rates, availability and ratings are placeholders until each property confirms in writing `[NEEDS PROOF]`.
 - **Tax:** the server adds a placeholder 12% to hotel bookings (`TAX_RATE`, default 0.12) `[NEEDS PROOF]`. It is duplicated as `TAX_RATE = 0.12` in `src/components/hotels/BookingSummary.jsx` and the two must stay in sync. Catering totals carry no tax line.
 - **Production without a sandbox:** the client decided to go live on Maya production without a sandbox because of the deadline. Eli accepted the risk.
-- **No availability or double-booking check** exists for hotels yet.
+- **No availability or double-booking check for hotels, by design** (decided by Eli, 1 Nov 2026): each listing is a room type with several real rooms behind it, so overlapping bookings are expected. If a hotel is full, the client voids (same day) or refunds the booking. Do not add an availability check unless asked.
 
 ## 5. Architecture and trust model
 
@@ -106,7 +106,8 @@ Hotel booking and Maya Checkout integration (`8982924`), webhook router mounted 
 - `.github/workflows/deploy.yml` deploys to GitHub Pages on every push to `main`, while production is on Vercel. Decide whether to keep or remove it.
 - **`vercel.json` (added 1 Nov 2026):** rewrites every path to `/index.html` (before this, deep links such as Maya's return URL `/payment/success?b=…` hit the leftover GitHub Pages `public/404.html` and looped forever), and sends the security headers: CSP (`connect-src` allows only the site and https://tala-catering-api.onrender.com; fonts from Google, images from images.unsplash.com; `frame-ancestors 'none'`), `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP. HSTS comes from Vercel. **If you add a new external host (images, fonts, scripts, APIs), add it to the CSP or it will be blocked.** No `render.yaml` yet.
 - `npm run lint` exists but ESLint is not installed or configured.
-- `DATABASE_CA_CERT` is optional, so the database connection can be encrypted but unverified.
+- **Database TLS:** Supabase "Enforce SSL on incoming connections" is on, and `DATABASE_CA_CERT` is set on Render (Supabase's CA certificate, tested locally first), so the API verifies it is talking to Supabase (1 Nov 2026). The code still falls back to encrypted-but-unverified if the variable is ever removed.
+- **`True-Client-IP` cannot be spoofed on Render:** a request carrying a fake `True-Client-IP: <Maya IP>` from outside got 403 (1 Nov 2026), so Render's edge overwrites the header; the webhook IP allow-list and rate limits rely on this. Re-test if the API moves host.
 
 ## 13. Sub-agents (`.claude/agents/`)
 
